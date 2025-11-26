@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Test Watch Together Socket</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.6.1/sockjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        .box { border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; }
+        #messages { height: 300px; overflow-y: scroll; background: #f9f9f9; border: 1px solid #ddd; padding: 10px; }
+    </style>
+</head>
+<body>
+
+<h2>🎥 Test Watch Together (WebSocket)</h2>
+
+<div class="box">
+    <label>1. Nhập Room Code:</label>
+    <input type="text" id="roomCode" placeholder="Ví dụ: A1B2C3" value="A1B2C3">
+    <button onclick="connect()">Kết nối vào Phòng</button>
+    <span id="status" style="color: red; font-weight: bold;">Chưa kết nối</span>
+</div>
+
+<div class="box">
+    <label>2. Chat:</label>
+    <input type="text" id="chatInput" placeholder="Nhập tin nhắn...">
+    <button onclick="sendChat()">Gửi Chat</button>
+</div>
+
+<div class="box">
+    <label>3. Sync Video (Giả lập):</label>
+    <button onclick="sendSync('PLAY', 10.5)">▶ Gửi Lệnh PLAY (tại 10.5s)</button>
+    <button onclick="sendSync('PAUSE', 20.0)">⏸ Gửi Lệnh PAUSE (tại 20s)</button>
+    <button onclick="sendSync('SEEK', 50.0)">⏩ Gửi Lệnh SEEK (tới 50s)</button>
+</div>
+
+<h3>📩 Nhật ký nhận tin (Real-time):</h3>
+<div id="messages"></div>
+
+<script>
+    var stompClient = null;
+
+    function connect() {
+        var roomCode = document.getElementById('roomCode').value;
+        if (!roomCode) { alert("Vui lòng nhập Room Code!"); return; }
+
+        // 1. Kết nối tới Endpoint /ws mà ta đã cấu hình trong Spring Boot
+        var socket = new SockJS('http://localhost:8080/ws');
+        stompClient = Stomp.over(socket);
+
+        stompClient.connect({}, function (frame) {
+            document.getElementById('status').innerText = 'Đã kết nối: ' + roomCode;
+            document.getElementById('status').style.color = 'green';
+            console.log('Connected: ' + frame);
+
+            // 2. Đăng ký nhận tin từ Server (Subscribe)
+            stompClient.subscribe('/topic/room/' + roomCode, function (payload) {
+                showOutput(JSON.parse(payload.body));
+            });
+        }, function(error) {
+            alert("Lỗi kết nối! Hãy chắc chắn Server đang chạy.");
+        });
+    }
+
+    function sendChat() {
+        var roomCode = document.getElementById('roomCode').value;
+        var content = document.getElementById('chatInput').value;
+
+        // 3. Gửi tin nhắn lên Server (Publish)
+        stompClient.send("/app/chat/" + roomCode, {}, JSON.stringify({
+            'type': 'CHAT',
+            'message': content,
+            'senderName': 'TestUser' // Giả lập tên người gửi
+        }));
+    }
+
+    function sendSync(type, time) {
+        var roomCode = document.getElementById('roomCode').value;
+
+        // 4. Gửi lệnh đồng bộ lên Server
+        stompClient.send("/app/sync/" + roomCode, {}, JSON.stringify({
+            'type': type,
+            'seekTime': time
+        }));
+    }
+
+    function showOutput(message) {
+        var response = document.getElementById('messages');
+        var p = document.createElement('p');
+        p.style.wordWrap = 'break-word';
+
+        if (message.type === 'CHAT') {
+            p.innerHTML = `💬 <b>${message.senderName}:</b> ${message.message}`;
+        } else {
+            p.innerHTML = `⚙️ <b>LỆNH SYNC:</b> ${message.type} tại giây thứ ${message.seekTime}`;
+            p.style.color = 'blue';
+        }
+
+        response.appendChild(p);
+        response.scrollTop = response.scrollHeight;
+    }
+</script>
+
+
+</body>
+</html>

@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Watch Together - Rạp Chiếu Online</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.6.1/sockjs.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+  <style>
+    body { background-color: #141414; color: white; font-family: sans-serif; margin: 0; display: flex; height: 100vh; overflow: hidden; }
+    .video-section { flex: 3; background: black; display: flex; flex-direction: column; justify-content: center; position: relative; }
+    video { width: 100%; max-height: 85vh; outline: none; }
+    .info-bar { padding: 15px; background: #1f1f1f; display: flex; justify-content: space-between; align-items: center; }
+    .chat-section { flex: 1; display: flex; flex-direction: column; border-left: 1px solid #333; background: #1f1f1f; max-width: 400px; }
+    .chat-history { flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 10px; }
+    .message { background: #333; padding: 8px 12px; border-radius: 10px; max-width: 85%; word-wrap: break-word; font-size: 14px; }
+    .my-message { align-self: flex-end; background: #e50914; }
+    .input-area { padding: 15px; border-top: 1px solid #333; display: flex; gap: 10px; }
+    input { flex: 1; padding: 10px; border-radius: 5px; border: none; background: #333; color: white; outline: none; }
+    button { padding: 10px 20px; background: #e50914; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
+
+    /* Overlay Nhập Liệu */
+    #login-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); z-index: 1000; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 15px; }
+    .input-group { display: flex; flex-direction: column; gap: 5px; width: 320px; }
+    .input-group input { font-size: 16px; padding: 12px; border: 1px solid #444; }
+    .hidden { display: none; }
+
+    #btnShare { background: #333; color: #46d369; border: 1px solid #46d369; margin-left: 10px; }
+  </style>
+</head>
+<body>
+
+<div id="login-overlay">
+  <h2 style="color: #e50914;">🎬 VÀO PHÒNG CHIẾU</h2>
+
+  <div class="input-group">
+    <label>1. Token Đăng Nhập (JWT)</label>
+    <input type="text" id="tokenInput" placeholder="Dán token của bạn vào đây...">
+  </div>
+
+  <div class="input-group">
+    <label>2. Mã Phòng</label>
+    <input type="text" id="roomCodeInput" placeholder="VD: A1B2C3">
+  </div>
+
+  <div class="input-group hidden" id="roomPassGroup">
+    <label style="color: #e50914;">🔒 Phòng này cần mật khẩu:</label>
+    <input type="password" id="roomPassInput" placeholder="Nhập mật khẩu phòng...">
+  </div>
+
+  <button onclick="tryJoinRoom()" style="width: 320px; margin-top: 10px;">VÀO NGAY</button>
+  <p id="errorMsg" style="color: red;"></p>
+</div>
+
+<div class="video-section">
+  <video id="mainVideo" controls> <source src="" type="video/mp4"> </video>
+  <div class="info-bar">
+    <div>
+      <h2 id="movieTitle" style="margin: 0;">Đang tải...</h2>
+      <span id="roomCodeDisplay" style="color: #888;">Code: ...</span>
+      <button id="btnShare" onclick="copyLink()">📋 Copy Link Mời</button>
+    </div>
+  </div>
+</div>
+
+<div class="chat-section">
+  <div class="chat-history" id="chatBox"></div>
+  <div class="input-area">
+    <input type="text" id="msgInput" placeholder="Nhập tin nhắn..." onkeypress="handleEnter(event)">
+    <button onclick="sendMessage()">Gửi</button>
+  </div>
+</div>
+
+<script>
+  var stompClient = null;
+  var currentRoomCode = null;
+  var userToken = null;
+  var myUsername = "Tôi";
+  var videoPlayer = document.getElementById('mainVideo');
+  var isSyncing = false;
+
+  // 1. Tự động lấy Mã Phòng từ URL (nếu có ?code=...)
+  window.onload = function() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get('code');
+    if (code) {
+      document.getElementById('roomCodeInput').value = code;
+      // Nếu có code thì focus vào ô Token luôn cho tiện
+      document.getElementById('tokenInput').focus();
+    }
+  };
+
+  function parseJwt(token) {
+    try { return JSON.parse(decodeURIComponent(window.atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''))); } catch (e) { return null; }
+  }
+
+  // 2. Hàm xử lý Vào phòng (Có check mật khẩu)
+  function tryJoinRoom() {
+    var code = document.getElementById('roomCodeInput').value.trim();
+    var token = document.getElementById('tokenInput').value.trim();
+    var password = document.getElementById('roomPassInput').value.trim();
+
+    if (!code || !token) return alert("Thiếu Token hoặc Mã phòng!");
+
+    // Bước 1: Gọi API check-join xem có cần pass không
+    fetch('/api/rooms/check-join', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ roomCode: code, password: password })
+    })
+            .then(res => {
+              if (res.status === 403) {
+                // Nếu lỗi 403 -> Nghĩa là Cần mật khẩu (hoặc sai mật khẩu)
+                document.getElementById('roomPassGroup').style.display = 'flex';
+                document.getElementById('errorMsg').innerText = "Phòng này riêng tư! Vui lòng nhập mật khẩu.";
+                throw new Error("Cần mật khẩu");
+              }
+              if (!res.ok) throw new Error("Mã phòng không tồn tại hoặc Token lỗi.");
+              return res.text(); // Thành công
+            })
+            .then(msg => {
+              // Bước 2: Nếu check thành công, gọi API lấy thông tin chi tiết để vào
+              return fetch(`/api/rooms/${code}`, {
+                method: 'GET',
+                headers: { 'Authorization': 'Bearer ' + token }
+              });
+            })
+            .then(res => res.json())
+            .then(room => {
+              // Đăng nhập thành công hoàn toàn
+              userToken = token;
+              currentRoomCode = code;
+              var userInfo = parseJwt(token);
+              if(userInfo) myUsername = userInfo.sub;
+
+              document.getElementById('login-overlay').style.display = 'none';
+              document.getElementById('movieTitle').innerText = room.movie.title;
+              document.getElementById('roomCodeDisplay').innerText = "Code: " + code;
+
+              videoPlayer.src = room.movie.videoUrl;
+              if(room.isPlaying) {
+                videoPlayer.currentTime = room.currentTime;
+                videoPlayer.play();
+              }
+              connectSocket(code);
+            })
+            .catch(err => {
+              if(err.message !== "Cần mật khẩu") alert(err.message);
+            });
+  }
+
+  function copyLink() {
+    var link = window.location.protocol + "//" + window.location.host + window.location.pathname + "?code=" + currentRoomCode;
+    navigator.clipboard.writeText(link).then(() => alert("Đã copy link mời: " + link));
+  }
+
+  // --- Các hàm Socket cũ giữ nguyên ---
+  function connectSocket(roomCode) {
+    var socket = new SockJS('/ws');
+    stompClient = Stomp.over(socket);
+    stompClient.debug = null;
+    stompClient.connect({}, function () {
+      stompClient.subscribe(`/topic/room/${roomCode}`, function (payload) {
+        handleSocketData(JSON.parse(payload.body));
+      });
+    });
+  }
+  function handleSocketData(data) {
+    if (data.type === 'CHAT') {
+      var chatBox = document.getElementById('chatBox');
+      var div = document.createElement('div');
+      div.className = 'message ' + (data.senderName === myUsername ? 'my-message' : '');
+      div.innerHTML = `<b>${data.senderName}:</b> ${data.message}`;
+      chatBox.appendChild(div);
+      chatBox.scrollTop = chatBox.scrollHeight;
+    } else if (['PLAY', 'PAUSE', 'SEEK'].includes(data.type)) {
+      isSyncing = true;
+      if (data.type === 'PAUSE') { videoPlayer.pause(); videoPlayer.currentTime = data.seekTime; }
+      else if (data.type === 'PLAY') { videoPlayer.currentTime = data.seekTime; videoPlayer.play(); }
+      else if (data.type === 'SEEK') { videoPlayer.currentTime = data.seekTime; }
+      setTimeout(() => isSyncing = false, 500);
+    }
+  }
+  function sendMessage() {
+    var input = document.getElementById('msgInput');
+    if(input.value.trim() === "") return;
+    stompClient.send(`/app/chat/${currentRoomCode}`, {}, JSON.stringify({ type: 'CHAT', message: input.value, senderName: myUsername }));
+    input.value = '';
+  }
+  function handleEnter(e) { if(e.key === 'Enter') sendMessage(); }
+  videoPlayer.onplay = () => { if(!isSyncing) sendSync('PLAY'); };
+  videoPlayer.onpause = () => { if(!isSyncing) sendSync('PAUSE'); };
+  videoPlayer.onseeked = () => { if(!isSyncing) sendSync('SEEK'); };
+  function sendSync(type) { if(stompClient) stompClient.send(`/app/sync/${currentRoomCode}`, {}, JSON.stringify({ type: type, seekTime: videoPlayer.currentTime })); }
+</script>
+</body>
+</html>
