@@ -12,18 +12,15 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
-        // Client sẽ kết nối vào: ws://localhost:8080/ws
+        // Đăng ký endpoint "/ws"
         registry.addEndpoint("/ws")
-                .setAllowedOriginPatterns("*") // Cho phép mọi nguồn kết nối (để dễ test)
-                .withSockJS(); // Hỗ trợ trình duyệt cũ
+                .setAllowedOriginPatterns("*") // <--- DÒNG QUAN TRỌNG NHẤT: Cho phép mọi nguồn (8081, 3000...) kết nối
+                .withSockJS(); // Kích hoạt SockJS để Frontend React kết nối được
     }
 
     @Override
     public void configureMessageBroker(MessageBrokerRegistry registry) {
-        // Prefix cho các tin nhắn từ Server -> Client
-        registry.enableSimpleBroker("/topic");
-
-        // Prefix cho các tin nhắn từ Client -> Server
         registry.setApplicationDestinationPrefixes("/app");
+        registry.enableSimpleBroker("/topic");
     }
 }
