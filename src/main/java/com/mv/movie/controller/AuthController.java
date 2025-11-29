@@ -60,7 +60,7 @@ public class AuthController {
             response.put("username", user.getUsername());
             response.put("avatar", user.getAvatar());
             response.put("id", user.getId());
-
+            response.put("role", user.getRole()); // Trả về role (ví dụ: "ADMIN" hoặc "USER")
             return ResponseEntity.ok(response);
         } else {
             return ResponseEntity.badRequest().body("Sai tên đăng nhập hoặc mật khẩu!");

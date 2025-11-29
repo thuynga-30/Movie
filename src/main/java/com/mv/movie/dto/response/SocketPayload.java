@@ -4,14 +4,10 @@ import lombok.Data;
 
 @Data
 public class SocketPayload {
-    // Loại tin nhắn: CHAT, JOIN, LEAVE, PLAY, PAUSE, SEEK
-    private String type;
+    private String type;       // "CHAT", "PLAY", "PAUSE", "SEEK", "JOIN", "LEAVE"
+    private String message;    // Nội dung chat
+    private String senderName; // Tên người gửi
+    private String avatar;     // Avatar người gửi
 
-    // Dữ liệu Chat
-    private String message;
-    private String senderName;
-    private String avatar;
-
-    // Dữ liệu Sync Video
-    private Float seekTime; // Thời gian video hiện tại (giây)
+    private Double seekTime;   // Thời gian video (cho lệnh sync)
 }

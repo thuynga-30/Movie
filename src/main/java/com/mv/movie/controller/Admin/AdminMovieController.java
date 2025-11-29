@@ -13,7 +13,8 @@ import org.springframework.web.multipart.MultipartFile;
 import java.util.List;
 
 @RestController
-@RequestMapping("/admin/movie/")
+@RequestMapping("/api/admin/movies")
+@CrossOrigin(origins = "http://localhost:3000", allowedHeaders = "*")
 public class AdminMovieController {
     @Autowired
     private MovieRepository movieRepository;
