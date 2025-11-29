@@ -1,8 +1,10 @@
 package com.mv.movie.controller.User;
 
 import com.mv.movie.dto.response.SocketPayload;
+import com.mv.movie.entity.ChatMessage;
 import com.mv.movie.entity.User;
 import com.mv.movie.entity.WatchRoom;
+import com.mv.movie.repository.ChatMessageRepository;
 import com.mv.movie.repository.MovieRepository;
 import com.mv.movie.repository.UserRepository;
 import com.mv.movie.repository.WatchRoomRepository;
@@ -14,7 +16,9 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/rooms")
@@ -27,6 +31,7 @@ public class RoomController {
     private WatchRoomRepository roomRepository;
     @Autowired
     private UserRepository userRepository;
+    @Autowired private ChatMessageRepository chatMessageRepository;
     @Autowired private SimpMessagingTemplate messagingTemplate; // Dùng để gửi tin nhắn Socket
     // Tạo phòng mới: POST /api/rooms?hostId=1&movieId=2&isPrivate=false
     // Cập nhật API POST /api/rooms
@@ -74,32 +79,32 @@ public class RoomController {
         if (room == null) return ResponseEntity.notFound().build();
         return ResponseEntity.ok(room);
     }
-    @DeleteMapping("/{roomCode}")
-    public ResponseEntity<?> deleteRoom(@PathVariable String roomCode) {
-        // 1. Lấy User đang đăng nhập
-        String currentUsername = SecurityContextHolder.getContext().getAuthentication().getName();
-
-        // 2. Tìm phòng
-        WatchRoom room = roomRepository.findByRoomCode(roomCode).orElse(null);
-        if (room == null) return ResponseEntity.badRequest().body("Phòng không tồn tại!");
-
-        // 3. Kiểm tra quyền chủ phòng
-        if (!room.getHost().getUsername().equals(currentUsername)) {
-            return ResponseEntity.status(403).body("Bạn không phải chủ phòng này!");
-        }
-
-        // 4. Gửi thông báo Socket cho tất cả thành viên: "Phòng đã giải tán"
-        // Frontend nhận được tin này sẽ tự động chuyển hướng về trang chủ
-        SocketPayload kickMessage = new SocketPayload();
-        kickMessage.setType("ROOM_DELETED");
-        kickMessage.setMessage("Chủ phòng đã giải tán phòng này!");
-        messagingTemplate.convertAndSend("/topic/room/" + roomCode, kickMessage);
-
-        // 5. Xóa phòng trong Database
-        roomRepository.delete(room);
-
-        return ResponseEntity.ok("Đã giải tán phòng thành công!");
-    }
+//    @DeleteMapping("/{roomCode}")
+//    public ResponseEntity<?> deleteRoom(@PathVariable String roomCode) {
+//        // 1. Lấy User đang đăng nhập
+//        String currentUsername = SecurityContextHolder.getContext().getAuthentication().getName();
+//
+//        // 2. Tìm phòng
+//        WatchRoom room = roomRepository.findByRoomCode(roomCode).orElse(null);
+//        if (room == null) return ResponseEntity.badRequest().body("Phòng không tồn tại!");
+//
+//        // 3. Kiểm tra quyền chủ phòng
+//        if (!room.getHost().getUsername().equals(currentUsername)) {
+//            return ResponseEntity.status(403).body("Bạn không phải chủ phòng này!");
+//        }
+//
+//        // 4. Gửi thông báo Socket cho tất cả thành viên: "Phòng đã giải tán"
+//        // Frontend nhận được tin này sẽ tự động chuyển hướng về trang chủ
+//        SocketPayload kickMessage = new SocketPayload();
+//        kickMessage.setType("ROOM_DELETED");
+//        kickMessage.setMessage("Chủ phòng đã giải tán phòng này!");
+//        messagingTemplate.convertAndSend("/topic/room/" + roomCode, kickMessage);
+//
+//        // 5. Xóa phòng trong Database
+//        roomRepository.delete(room);
+//
+//        return ResponseEntity.ok("Đã giải tán phòng thành công!");
+//    }
     // POST /api/rooms/join
     @PostMapping("/check-join")
     public ResponseEntity<?> checkJoinRoom(@RequestBody Map<String, String> request) {
@@ -118,5 +123,56 @@ public class RoomController {
         }
 
         return ResponseEntity.ok("Mật khẩu đúng, cho phép vào!");
+    }
+    @GetMapping("/{roomCode}/messages")
+    public ResponseEntity<?> getRoomMessages(@PathVariable String roomCode) {
+        // 1. Lấy danh sách tin nhắn từ DB
+        List<ChatMessage> messages = chatMessageRepository.findByRoom_RoomCodeOrderBySentAtAsc(roomCode);
+
+        // 2. Chuyển đổi từ Entity sang DTO (SocketPayload) để Frontend dễ dùng
+        List<SocketPayload> response = messages.stream().map(msg -> {
+            SocketPayload dto = new SocketPayload();
+            dto.setType("CHAT");
+            dto.setMessage(msg.getMessage());
+
+            // Lấy thông tin từ quan hệ User để hiển thị Avatar/Tên
+            if (msg.getUser() != null) {
+                dto.setSenderName(msg.getUser().getUsername());
+                dto.setAvatar(msg.getUser().getAvatar());
+            }
+            return dto;
+        }).collect(Collectors.toList());
+
+        return ResponseEntity.ok(response);
+    }
+    @GetMapping("/my-rooms")
+    public ResponseEntity<?> getMyRooms() {
+        String username = SecurityContextHolder.getContext().getAuthentication().getName();
+        User host = userRepository.findByUsername(username).orElseThrow();
+
+        List<WatchRoom> rooms = roomRepository.findByHost(host);
+        return ResponseEntity.ok(rooms);
+    }
+
+    // 2. API XÓA PHÒNG (Chỉ Host mới xóa được)
+    @DeleteMapping("/{roomCode}")
+    public ResponseEntity<?> deleteRoom(@PathVariable String roomCode) {
+        String username = SecurityContextHolder.getContext().getAuthentication().getName();
+        WatchRoom room = roomRepository.findByRoomCode(roomCode)
+                .orElseThrow(() -> new RuntimeException("Phòng không tồn tại"));
+
+        // Kiểm tra quyền: Chỉ Host mới được xóa
+        if (!room.getHost().getUsername().equals(username)) {
+            return ResponseEntity.status(403).body("Bạn không phải chủ phòng!");
+        }
+
+        // Xóa phòng
+        roomRepository.delete(room);
+
+        // (Nâng cao) Gửi thông báo Socket để đá tất cả mọi người ra khỏi phòng
+        // Bạn cần tạo class SocketPayload type = "ROOM_DELETED"
+        // messagingTemplate.convertAndSend("/topic/room/" + roomCode, new SocketPayload("ROOM_DELETED", ...));
+
+        return ResponseEntity.ok("Đã giải tán phòng.");
     }
 }
