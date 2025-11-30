@@ -13,4 +13,5 @@ public interface WatchRoomRepository extends JpaRepository<WatchRoom, Integer> {
     Optional<WatchRoom> findByRoomCode(String roomCode);
     boolean existsByRoomCode(String roomCode);
     List<WatchRoom> findByHost(User host);
+    List<WatchRoom> findByIsPrivateFalseOrderByCreatedAtDesc(); // Lấy phòng công khai mới nhất
 }

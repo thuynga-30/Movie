@@ -41,11 +41,11 @@ public class SecurityConfig {
                         .requestMatchers("/api/admin/**").hasAuthority("admin")
                         .requestMatchers("/api/movies/**").permitAll()// Sửa lại cho khớp frontend: /api/movies
                         .requestMatchers("/api/categories/**").permitAll()// Sửa lại cho khớp frontend: /api/movies
+
                         .requestMatchers("/api/movie/**").permitAll()
                         .requestMatchers("/images/**").permitAll()
                         .requestMatchers("/*.html").permitAll()
                         .requestMatchers("/ws/**").permitAll()
-
                         // Cho phép GET reviews
                         .requestMatchers(HttpMethod.GET, "/api/reviews/**").permitAll()
 
