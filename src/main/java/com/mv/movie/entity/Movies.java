@@ -33,7 +33,12 @@ public class Movies {
     @UpdateTimestamp
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
+    @Column(name = "view_count", columnDefinition = "integer default 0")
+    private int viewCount = 0;
 
+    // Getter & Setter (Lombok @Data đã tự sinh, nếu không dùng Lombok thì tự viết)
+    public int getViewCount() { return viewCount; }
+    public void setViewCount(int viewCount) { this.viewCount = viewCount; }
     public Integer getId() {
         return id;
     }

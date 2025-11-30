@@ -105,5 +105,37 @@ public class AdminMovieController {
         movieRepository.deleteById(id);
         return ResponseEntity.ok("Movie deleted successfully");
     }
+    @PutMapping("/movies/{id}")
+    public ResponseEntity<?> updateMovie(
+            @PathVariable Integer id,
+            @RequestParam("title") String title,
+            @RequestParam("description") String description,
+            @RequestParam("videoUrl") String videoUrl,
+            @RequestParam("releaseYear") int releaseYear,
+            @RequestParam("duration") int duration,
+            @RequestParam(value = "poster", required = false) MultipartFile posterFile // Poster không bắt buộc
+    ) {
+        try {
+            Movies movie = movieRepository.findById(id).orElseThrow(() -> new RuntimeException("Movie not found"));
+
+            movie.setTitle(title);
+            movie.setDescription(description);
+            movie.setVideoUrl(videoUrl);
+            movie.setReleaseYear(releaseYear);
+            movie.setDuration(duration);
+
+            // Nếu có gửi ảnh mới lên thì mới thay đổi, không thì giữ nguyên ảnh cũ
+            if (posterFile != null && !posterFile.isEmpty()) {
+                String posterPath = fileStorageService.storeFile(posterFile); // Hàm lưu file của bạn
+                movie.setPoster(posterPath);
+            }
+
+            movieRepository.save(movie);
+            return ResponseEntity.ok(movie);
+
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("Lỗi cập nhật: " + e.getMessage());
+        }
+    }
 
 }

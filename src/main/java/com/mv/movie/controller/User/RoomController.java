@@ -169,10 +169,15 @@ public class RoomController {
         // Xóa phòng
         roomRepository.delete(room);
 
-        // (Nâng cao) Gửi thông báo Socket để đá tất cả mọi người ra khỏi phòng
-        // Bạn cần tạo class SocketPayload type = "ROOM_DELETED"
-        // messagingTemplate.convertAndSend("/topic/room/" + roomCode, new SocketPayload("ROOM_DELETED", ...));
-
         return ResponseEntity.ok("Đã giải tán phòng.");
+    }
+    // Trong RoomController.java
+
+    // API LẤY DANH SÁCH PHÒNG CÔNG KHAI (ACTIVE)
+    @GetMapping("/public")
+    public ResponseEntity<?> getPublicRooms() {
+        // Lấy tất cả phòng không khóa (isPrivate = false)
+        List<WatchRoom> rooms = roomRepository.findByIsPrivateFalseOrderByCreatedAtDesc();
+        return ResponseEntity.ok(rooms);
     }
 }
