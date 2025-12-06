@@ -2,19 +2,14 @@ package com.mv.movie.controller.User;
 
 import com.mv.movie.entity.Movies;
 import com.mv.movie.repository.MovieRepository;
+import com.mv.movie.repository.RatingRepository; // Import cái này
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
-import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import jakarta.persistence.criteria.Predicate;
-
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/movies")
@@ -22,55 +17,60 @@ public class MovieController {
 
     @Autowired
     private MovieRepository movieRepository;
-    /**
-     * GET /api/movies?keyword=tenphim&categoryId=1&releaseYear=2024&page=0&size=10
-     * @param keyword: Tìm kiếm theo tên hoặc mô tả
-     * @param categoryId: Lọc theo ID thể loại
-     * @param releaseYear: Lọc theo năm phát hành
-     * @param page: Trang hiện tại (default 0)
-     * @param size: Số lượng phim trên 1 trang (default 10)
-     * @param sortBy: Sắp xếp theo cột nào (default: createdAt)
-     */
+
+    @Autowired
+    private RatingRepository ratingRepository; // ✅ Inject Repository tính điểm
+
+    // 1. API Lấy danh sách phim (Có phân trang)
     @GetMapping
-    public Page<Movies> getMovies(
-            @RequestParam Optional<String> keyword,
-            @RequestParam Optional<Integer> categoryId,
-            @RequestParam Optional<Integer> releaseYear,
+    public ResponseEntity<?> getAllMovies(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
-            @RequestParam(defaultValue = "createdAt") String sortBy,
-            @RequestParam(defaultValue = "DESC") String sortDir
-            ) {
-        Sort sort = Sort.by(Sort.Direction.fromString(sortDir), sortBy);
-        Pageable pageable = PageRequest.of(page, size, sort);
-        Specification<Movies> specification = (root, query, criteriaBuilder) -> {
-            List<Predicate> predicates = new ArrayList<>();
+            @RequestParam(required = false) String search // ✅ Thêm tham số search (không bắt buộc)
+    ) {
+        Pageable pageable = PageRequest.of(page, size, Sort.by("id").descending());
+        Page<Movies> moviePage;
 
-            // A. Lọc theo TỪ KHÓA (Tìm trong title HOẶC description)
-            if (keyword.isPresent() && !keyword.get().isEmpty()) {
-                String likeKeyword = "%" + keyword.get().toLowerCase() + "%";
-                Predicate titlePredicate = criteriaBuilder.like(criteriaBuilder.lower(root.get("title")), likeKeyword);
-                Predicate descriptionPredicate = criteriaBuilder.like(criteriaBuilder.lower(root.get("description")), likeKeyword);
-
-                // Kết hợp 2 điều kiện tìm kiếm bằng OR
-                predicates.add(criteriaBuilder.or(titlePredicate, descriptionPredicate));
-            }
-            if (categoryId.isPresent()) {
-                predicates.add(criteriaBuilder.equal(root.get("category").get("id"), categoryId.get()));
-            }
-            // C. Lọc theo NĂM PHÁT HÀNH (releaseYear)
-            if (releaseYear.isPresent()) {
-                predicates.add(criteriaBuilder.equal(root.get("releaseYear"), releaseYear.get()));
-            }
-            return criteriaBuilder.and(predicates.toArray(new Predicate[0]));
-        };
-        return movieRepository.findAll(specification, pageable);
+        // ✅ LOGIC TÌM KIẾM
+        if (search != null && !search.isEmpty()) {
+            // Nếu có từ khóa -> Tìm kiếm
+            moviePage = movieRepository.findByTitleContainingIgnoreCase(search, pageable);
+        } else {
+            // Nếu không -> Lấy tất cả
+            moviePage = movieRepository.findAll(pageable);
         }
 
+        // ✅ TÍNH ĐIỂM RATING CHO KẾT QUẢ TÌM ĐƯỢC
+        for (Movies movie : moviePage.getContent()) {
+            calculateAndSetRating(movie); // Hàm tính điểm bạn đã viết ở bước trước
+        }
+
+        return ResponseEntity.ok(moviePage);
+    }
+
+    // 2. API Lấy chi tiết 1 phim
     @GetMapping("/{id}")
-    public ResponseEntity<Movies> getMovieDetail(@PathVariable int id) {
-        Optional<Movies> movie = movieRepository.findById(id);
-        return movie.map(ResponseEntity::ok)
-                .orElseGet(() -> ResponseEntity.notFound().build());
+    public ResponseEntity<?> getMovieById(@PathVariable Long id) {
+        Movies movie = movieRepository.findById(Math.toIntExact(id))
+                .orElseThrow(() -> new RuntimeException("Phim không tồn tại"));
+
+        // ✅ Tính điểm cho phim này
+        calculateAndSetRating(movie);
+
+        return ResponseEntity.ok(movie);
+    }
+
+    // --- HÀM PHỤ TRỢ ĐỂ TÍNH VÀ LÀM TRÒN ĐIỂM ---
+    private void calculateAndSetRating(Movies movie) {
+        Double avg = ratingRepository.getAverageRating(movie.getId());
+
+        if (avg != null) {
+            // Làm tròn 1 chữ số thập phân (VD: 4.6666 -> 4.7)
+            double rounded = Math.round(avg * 10.0) / 10.0;
+            movie.setRating(rounded);
+        } else {
+            // Nếu chưa ai đánh giá thì cho 0 điểm (hoặc N/A tùy logic)
+            movie.setRating(0.0);
+        }
     }
 }

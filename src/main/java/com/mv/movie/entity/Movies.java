@@ -11,7 +11,7 @@ import java.time.LocalDateTime;
 public class Movies {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Integer id;
+    private Long id;
     @Column(nullable = false)
     private String title;
     @Column(columnDefinition = "TEXT")
@@ -35,15 +35,25 @@ public class Movies {
     private LocalDateTime updatedAt;
     @Column(name = "view_count", columnDefinition = "integer default 0")
     private int viewCount = 0;
+    @Transient
+    private Double rating;
+
+    public Double getRating() {
+        return rating == null ? 0.0 : rating;
+    }
+
+    public void setRating(Double rating) {
+        this.rating = rating;
+    }
 
     // Getter & Setter (Lombok @Data đã tự sinh, nếu không dùng Lombok thì tự viết)
     public int getViewCount() { return viewCount; }
     public void setViewCount(int viewCount) { this.viewCount = viewCount; }
     public Integer getId() {
-        return id;
+        return Math.toIntExact(id);
     }
 
-    public void setId(Integer id) {
+    public void setId(Long id) {
         this.id = id;
     }
 

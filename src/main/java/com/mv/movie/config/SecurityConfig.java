@@ -13,7 +13,6 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
-
 import java.util.Arrays;
 
 @Configuration
@@ -23,32 +22,30 @@ public class SecurityConfig {
     @Autowired
     private JwtAuthenticationFilter jwtAuthenticationFilter;
 
-    // --- THÊM ĐOẠN NÀY ĐỂ SỬA LỖI ---
     @Bean
-    public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
-    }
-    // -------------------------------
+    public PasswordEncoder passwordEncoder() { return new BCryptPasswordEncoder(); }
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-                .cors(cors -> cors.configurationSource(corsConfigurationSource())) // Bật CORS
-                .csrf(csrf -> csrf.disable()) // Tắt CSRF
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+                .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/**").permitAll()
-                        .requestMatchers("/api/user/**").permitAll()
-                        .requestMatchers("/api/admin/**").hasAuthority("admin")
-                        .requestMatchers("/api/movies/**").permitAll()// Sửa lại cho khớp frontend: /api/movies
-                        .requestMatchers("/api/categories/**").permitAll()// Sửa lại cho khớp frontend: /api/movies
-
-                        .requestMatchers("/api/movie/**").permitAll()
+                        // ✅ DÒNG NÀY QUAN TRỌNG NHẤT: Mở khóa file ảnh/video
+                        // Phải đặt trên cùng để không bị chặn bởi các luật khác
                         .requestMatchers("/images/**").permitAll()
-                        .requestMatchers("/*.html").permitAll()
-                        .requestMatchers("/ws/**").permitAll()
-                        // Cho phép GET reviews
-                        .requestMatchers(HttpMethod.GET, "/api/reviews/**").permitAll()
 
+                        // Các API công khai
+                        .requestMatchers("/api/auth/**", "/ws/**", "/*.html").permitAll()
+
+                        // Cho phép xem phim
+                        .requestMatchers(HttpMethod.GET, "/api/movies/**", "/api/categories/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/categories/**").permitAll()
+
+                        // Admin
+                        .requestMatchers("/api/admin/**").hasAuthority("admin")
+
+                        // Chốt chặn cuối cùng
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
@@ -64,7 +61,6 @@ public class SecurityConfig {
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(Arrays.asList("*"));
         configuration.setAllowCredentials(true);
-
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
         return source;
