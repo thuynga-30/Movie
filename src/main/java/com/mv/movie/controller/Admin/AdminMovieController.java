@@ -16,11 +16,13 @@ import java.util.List;
 @RequestMapping("/api/admin/movies")
 @CrossOrigin(origins = "http://localhost:3000", allowedHeaders = "*")
 public class AdminMovieController {
+
     @Autowired
     private MovieRepository movieRepository;
 
     @Autowired
     private FileStorageService fileStorageService;
+
     @Autowired
     private CategoryRepository categoryRepository;
 
@@ -29,74 +31,102 @@ public class AdminMovieController {
         return movieRepository.findAll();
     }
 
+    // 1. THÊM PHIM MỚI
     @PostMapping
-    public ResponseEntity<?> addMovie(@RequestParam("title") String title,
-                                      @RequestParam(value = "description",required = false) String description,
-                                      @RequestParam("videoUrl") String videoUrl, // Link phim (Copy paste link)
-                                      @RequestParam("releaseYear") Integer releaseYear,
-                                      @RequestParam("duration") Integer duration,
-                                      @RequestParam("categoryId") Integer categoryId, // Nhận ID thể loại
-                                      @RequestParam(value = "poster", required = false) MultipartFile posterFile
+    public ResponseEntity<?> addMovie(
+            @RequestParam("title") String title,
+            @RequestParam("description") String description,
+            @RequestParam("releaseYear") int releaseYear,
+            @RequestParam("duration") int duration,
+            @RequestParam("categoryId") Long categoryId, // Có nhận Category ID
+            @RequestParam("poster") MultipartFile posterFile,
+            @RequestParam(value = "videoFile", required = false) MultipartFile videoFile,
+            @RequestParam(value = "videoUrl", required = false) String videoUrl
     ) {
-        Category category = categoryRepository.findById(categoryId).orElse(null);
-        if (category == null) {
-            return ResponseEntity.badRequest().body("Category not found");
-        }
-        Movies movies = new Movies();
-        movies.setTitle(title);
-        movies.setDescription(description);
-        movies.setVideoUrl(videoUrl);
-        movies.setReleaseYear(releaseYear);
-        movies.setDuration(duration);
-        movies.setCategory(category);
-
-        if (posterFile != null && !posterFile.isEmpty()) {
-            String fileName = fileStorageService.storeFile(posterFile);
-            movies.setPoster(fileName);
-        } else {
-            movies.setPoster("/images/posters/default_poster.jpg");
-        }
-        return ResponseEntity.ok(movieRepository.save(movies));
-    }
-    //update
-    @PutMapping("/{id}")
-    public ResponseEntity<?> updateMovie(@PathVariable Integer id,
-                                         @RequestParam(value = "title", required = false) String title,
-                                         @RequestParam(value = "description", required = false) String description,
-                                         @RequestParam(value = "videoUrl", required = false) String videoUrl,
-                                         @RequestParam(value = "releaseYear", required = false) Integer releaseYear,
-                                         @RequestParam(value = "duration", required = false) Integer duration,
-                                         @RequestParam(value = "categoryId", required = false) Integer categoryId,
-                                         @RequestParam(value = "poster", required = false) MultipartFile posterFile
-    ) {
-        Movies movie = movieRepository.findById(id).orElse(null);
-        if (movie == null) {
-            return ResponseEntity.badRequest().body("Movie not found");
-        }
-        if (posterFile != null && !posterFile.isEmpty()) {
-            String fileName = fileStorageService.storeFile(posterFile);
-            movie.setPoster(fileName);
-        }
-        if (title != null && !title.isEmpty()) {
+        try {
+            Movies movie = new Movies();
             movie.setTitle(title);
-        }
-        if (description != null && !description.isEmpty()) {
             movie.setDescription(description);
-        }
-        if (videoUrl != null && !videoUrl.isEmpty()) {
-            movie.setVideoUrl(videoUrl);
-        }
-        if (releaseYear != null) movie.setReleaseYear(releaseYear);
-        if (duration != null) movie.setDuration(duration);
+            movie.setReleaseYear(releaseYear);
+            movie.setDuration(duration);
 
-        // Cập nhật thể loại nếu có chọn mới
-        if (categoryId != null) {
-            Category category = categoryRepository.findById(categoryId).orElse(null);
-            if (category != null) movie.setCategory(category);
+            String posterName = fileStorageService.storeFile(posterFile);
+            movie.setPoster(posterName);
+
+            if (videoFile != null && !videoFile.isEmpty()) {
+                String videoName = fileStorageService.storeFile(videoFile);
+                movie.setVideoUrl(videoName);
+            } else if (videoUrl != null && !videoUrl.isEmpty()) {
+                movie.setVideoUrl(videoUrl);
+            } else {
+                return ResponseEntity.badRequest().body("Vui lòng nhập Link video hoặc Upload file!");
+            }
+
+            // Tìm và gán Category
+            Category category = categoryRepository.findById(Math.toIntExact(categoryId))
+                    .orElseThrow(() -> new RuntimeException("Category not found"));
+            movie.setCategory(category);
+
+            movieRepository.save(movie);
+            return ResponseEntity.ok(movie);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("Lỗi thêm phim: " + e.getMessage());
         }
-        return ResponseEntity.ok(movieRepository.save(movie));
     }
-    //Xóa
+
+    // 2. CẬP NHẬT PHIM (ĐÃ SỬA LỖI THIẾU CATEGORY)
+    @PutMapping("/{id}")
+    public ResponseEntity<?> updateMovie(
+            @PathVariable Long id, // Lưu ý: dùng Long hoặc Integer tùy thuộc vào ID trong Entity của bạn
+            @RequestParam("title") String title,
+            @RequestParam("description") String description,
+            @RequestParam("releaseYear") int releaseYear,
+            @RequestParam("duration") int duration,
+
+            // ✅ QUAN TRỌNG: Thêm tham số này để nhận ID thể loại mới
+            @RequestParam("categoryId") Long categoryId,
+
+            @RequestParam(value = "poster", required = false) MultipartFile posterFile,
+            @RequestParam(value = "videoFile", required = false) MultipartFile videoFile,
+            @RequestParam(value = "videoUrl", required = false) String videoUrl
+    ) {
+        try {
+            // Lưu ý: Chuyển đổi ID cho khớp với Repository của bạn (nếu Repo dùng Integer thì ép kiểu, nếu Long thì để nguyên)
+            Movies movie = movieRepository.findById(Math.toIntExact(id))
+                    .orElseThrow(() -> new RuntimeException("Movie not found"));
+
+            movie.setTitle(title);
+            movie.setDescription(description);
+            movie.setReleaseYear(releaseYear);
+            movie.setDuration(duration);
+
+            // ✅ LOGIC CẬP NHẬT THỂ LOẠI (BỊ THIẾU TRONG CODE CŨ)
+            Category category = categoryRepository.findById(Math.toIntExact(categoryId))
+                    .orElseThrow(() -> new RuntimeException("Category not found"));
+            movie.setCategory(category);
+
+            // Update Poster
+            if (posterFile != null && !posterFile.isEmpty()) {
+                String posterName = fileStorageService.storeFile(posterFile);
+                movie.setPoster(posterName);
+            }
+
+            // Update Video
+            if (videoFile != null && !videoFile.isEmpty()) {
+                String videoName = fileStorageService.storeFile(videoFile);
+                movie.setVideoUrl(videoName);
+            } else if (videoUrl != null && !videoUrl.isEmpty()) {
+                movie.setVideoUrl(videoUrl);
+            }
+
+            movieRepository.save(movie);
+            return ResponseEntity.ok(movie);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("Lỗi cập nhật: " + e.getMessage());
+        }
+    }
+
+    // 3. XÓA PHIM
     @DeleteMapping("/{id}")
     public ResponseEntity<?> deleteMovie(@PathVariable Integer id) {
         if (!movieRepository.existsById(id)) {
@@ -105,37 +135,4 @@ public class AdminMovieController {
         movieRepository.deleteById(id);
         return ResponseEntity.ok("Movie deleted successfully");
     }
-    @PutMapping("/movies/{id}")
-    public ResponseEntity<?> updateMovie(
-            @PathVariable Integer id,
-            @RequestParam("title") String title,
-            @RequestParam("description") String description,
-            @RequestParam("videoUrl") String videoUrl,
-            @RequestParam("releaseYear") int releaseYear,
-            @RequestParam("duration") int duration,
-            @RequestParam(value = "poster", required = false) MultipartFile posterFile // Poster không bắt buộc
-    ) {
-        try {
-            Movies movie = movieRepository.findById(id).orElseThrow(() -> new RuntimeException("Movie not found"));
-
-            movie.setTitle(title);
-            movie.setDescription(description);
-            movie.setVideoUrl(videoUrl);
-            movie.setReleaseYear(releaseYear);
-            movie.setDuration(duration);
-
-            // Nếu có gửi ảnh mới lên thì mới thay đổi, không thì giữ nguyên ảnh cũ
-            if (posterFile != null && !posterFile.isEmpty()) {
-                String posterPath = fileStorageService.storeFile(posterFile); // Hàm lưu file của bạn
-                movie.setPoster(posterPath);
-            }
-
-            movieRepository.save(movie);
-            return ResponseEntity.ok(movie);
-
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body("Lỗi cập nhật: " + e.getMessage());
-        }
-    }
-
 }

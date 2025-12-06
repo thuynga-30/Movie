@@ -1,4 +1,4 @@
-package com.mv.movie.controller;
+package com.mv.movie.controller.User;
 
 import com.mv.movie.entity.User;
 import com.mv.movie.repository.UserRepository;
