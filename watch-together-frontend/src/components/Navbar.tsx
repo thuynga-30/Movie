@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { getImageUrl } from "@/services/api"; // ✅ Import hàm xử lý ảnh
+import { getImageUrl } from "@/services/api";
 
 interface NavbarProps {
   isAuthenticated?: boolean;
@@ -30,7 +30,7 @@ const Navbar = ({
   const [user, setUser] = useState<any>(null);
   const [keyword, setKeyword] = useState("");
 
-  // 1. Kiểm tra trạng thái đăng nhập từ LocalStorage
+  // 1. Kiểm tra trạng thái đăng nhập
   useEffect(() => {
     const userStr = localStorage.getItem("user");
     const token = localStorage.getItem("token");
@@ -41,9 +41,8 @@ const Navbar = ({
 
   // 2. Xử lý Đăng xuất
   const handleLogout = () => {
-    localStorage.clear(); // Xóa sạch dữ liệu
+    localStorage.clear();
     setUser(null);
-
     if (propLogout) {
       propLogout();
     } else {
@@ -51,22 +50,23 @@ const Navbar = ({
     }
   };
 
-  // 3. Xử lý Tìm kiếm (Chuyển trang thật)
+  // ✅ 3. CHỈNH SỬA LOGIC TÌM KIẾM
   const handleSearch = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && keyword.trim()) {
-      // ✅ Chuyển hướng sang trang Movies kèm từ khóa
-      navigate(`/movies?search=${encodeURIComponent(keyword)}`);
+    if (e.key === "Enter") {
+      if (keyword.trim()) {
+        // Chuyển hướng về trang chủ (/) kèm tham số search
+        // Vì ở bước trước ta đã cấu hình trang Index.tsx lắng nghe tham số này
+        navigate(`/?search=${encodeURIComponent(keyword)}`);
+      } else {
+        // Nếu xóa trắng và Enter -> Về trang chủ gốc (hiển thị tất cả)
+        navigate("/");
+      }
     }
   };
 
-  // Ưu tiên dùng dữ liệu thật từ State
   const isLoggedIn = user !== null || propAuth;
   const displayName = user?.username || propName || "User";
-
-  // ✅ Xử lý ảnh Avatar (Thêm domain localhost:8080 nếu cần)
   const displayAvatar = user ? getImageUrl(user.avatar) : propAvatar;
-
-  // ✅ Lấy Role (admin/user)
   const userRole = user?.role;
 
   return (
@@ -84,7 +84,7 @@ const Navbar = ({
 
             {/* MENU GIỮA */}
             <div className="hidden md:flex items-center gap-6">
-              <Link to="/movies">
+              <Link to="/movies"> {/* Sửa link phim về trang chủ cho khớp logic */}
                 <Button variant="ghost" className="hover:text-primary transition-colors">
                   Phim
                 </Button>
@@ -106,7 +106,7 @@ const Navbar = ({
             {/* MENU PHẢI */}
             <div className="flex items-center gap-4">
 
-              {/* SEARCH BOX */}
+              {/* SEARCH BOX (Giữ nguyên giao diện) */}
               <div className="relative hidden lg:block">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
@@ -114,7 +114,7 @@ const Navbar = ({
                     className="pl-10 w-64 bg-card border-border focus:border-primary transition-colors"
                     value={keyword}
                     onChange={(e) => setKeyword(e.target.value)}
-                    onKeyDown={handleSearch}
+                    onKeyDown={handleSearch} // Gọi hàm handleSearch mới
                 />
               </div>
 
@@ -144,7 +144,6 @@ const Navbar = ({
                         </Link>
                       </DropdownMenuItem>
 
-                      {/* ✅ CHỈ HIỆN KHI ROLE LÀ "admin" (chữ thường) */}
                       {userRole === "admin" && (
                           <DropdownMenuItem asChild>
                             <Link to="/admin" className="cursor-pointer flex items-center w-full text-orange-500 font-medium">
@@ -153,7 +152,6 @@ const Navbar = ({
                             </Link>
                           </DropdownMenuItem>
                       )}
-                      {/* --------------------------------------------- */}
 
                       <DropdownMenuSeparator />
                       <DropdownMenuItem onClick={handleLogout} className="cursor-pointer text-destructive w-full flex items-center">

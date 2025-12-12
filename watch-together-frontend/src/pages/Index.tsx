@@ -1,13 +1,13 @@
 import { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams, useNavigate } from "react-router-dom"; // Thêm useSearchParams, useNavigate
 import { Button } from "@/components/ui/button";
-import { Play, Users, Film, TrendingUp, Star, Loader2 } from "lucide-react";
+import { Play, Users, Film, TrendingUp, Star, Loader2, Search, X, Frown } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import MovieCard from "@/components/MovieCard";
 import heroBanner from "@/assets/hero-banner.jpg";
-import { api, getImageUrl } from "@/services/api"; // Import API
+import { api, getImageUrl } from "@/services/api";
 
-// Định nghĩa kiểu dữ liệu phim từ Backend trả về
+// Định nghĩa kiểu dữ liệu phim
 interface Movie {
   id: number;
   title: string;
@@ -15,196 +15,212 @@ interface Movie {
   rating?: number;
   releaseYear: number;
   duration: number;
-  category?: { id: number; name: string }; // Backend trả về object Category
+  category?: { id: number; name: string };
 }
 
 const Index = () => {
-  const [trendingMovies, setTrendingMovies] = useState<Movie[]>([]);
+  const navigate = useNavigate();
+
+  // 1. Lấy từ khóa tìm kiếm từ URL
+  const [searchParams] = useSearchParams();
+  const searchKeyword = searchParams.get("search");
+
+  // Đổi tên state từ trendingMovies -> movies (vì nó chứa cả kết quả tìm kiếm)
+  const [movies, setMovies] = useState<Movie[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Gọi API lấy danh sách phim (Lấy 6 phim mới nhất làm Trending)
+  // 2. Gọi API (Tự động chạy lại khi searchKeyword thay đổi)
   useEffect(() => {
-    const fetchTrendingMovies = async () => {
+    const fetchMovies = async () => {
       try {
         setLoading(true);
-        // Gọi API: Lấy trang 0, 6 phần tử, sắp xếp theo ID giảm dần (mới nhất)
-        // Nếu bạn đã làm chức năng rating, có thể sort theo rating
-        const response = await api.get("/api/movies?page=0&size=6&sort=id,desc");
-        setTrendingMovies(response.data.content || []);
+        let endpoint = "";
+
+        if (searchKeyword) {
+          // A. Nếu đang tìm kiếm -> Gọi API Search
+          endpoint = `/api/movies?search=${encodeURIComponent(searchKeyword)}`;
+        } else {
+          // B. Nếu không tìm kiếm -> Gọi API Trending (Mới nhất)
+          endpoint = "/api/movies?page=0&size=12&sort=id,desc"; // Tăng size lên 12 để nhìn cho đã
+        }
+
+        const response = await api.get(endpoint);
+        setMovies(response.data.content || []);
       } catch (error) {
-        console.error("Lỗi tải phim trending:", error);
+        console.error("Lỗi tải phim:", error);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchTrendingMovies();
-  }, []);
+    fetchMovies();
+  }, [searchKeyword]); // ✅ Quan trọng: Chạy lại khi URL thay đổi
+
+  // Hàm xóa tìm kiếm để về trang chủ
+  const clearSearch = () => {
+    navigate("/");
+  };
 
   return (
-      <div className="min-h-screen bg-background">
-        {/* Navbar: Tự động check login bên trong component đó */}
+      <div className="min-h-screen bg-background pb-20">
         <Navbar />
 
-        {/* Hero Section (Giữ nguyên giao diện đẹp của bạn) */}
-        <section className="relative h-screen flex items-center justify-center overflow-hidden">
-          <div className="absolute inset-0">
-            <img
-                src={heroBanner}
-                alt="Rạp chiếu phim"
-                className="w-full h-full object-cover"
-            />
-            <div className="absolute inset-0 bg-gradient-hero" />
-            <div className="absolute inset-0 bg-background/40" />
-          </div>
+        {/* 3. LOGIC HIỂN THỊ HERO BANNER
+            - Nếu đang ở trang chủ bình thường: HIỆN Banner.
+            - Nếu đang tìm kiếm: ẨN Banner đi để hiện kết quả ngay.
+        */}
+        {!searchKeyword && (
+            <section className="relative h-screen flex items-center justify-center overflow-hidden">
+              <div className="absolute inset-0">
+                <img src={heroBanner} alt="Rạp chiếu phim" className="w-full h-full object-cover" />
+                <div className="absolute inset-0 bg-gradient-hero" />
+                <div className="absolute inset-0 bg-background/40" />
+              </div>
 
-          <div className="relative z-10 container mx-auto px-4 text-center space-y-8">
-            <h1 className="text-5xl md:text-7xl font-bold text-foreground drop-shadow-lg animate-in fade-in slide-in-from-bottom-4 duration-1000">
-              Xem cùng nhau,
-              <br />
-              <span className="bg-gradient-primary bg-clip-text text-transparent">
-              Cảm nhận cùng nhau
-            </span>
-            </h1>
-            <p className="text-xl md:text-2xl text-foreground/90 max-w-2xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-1000 delay-150">
-              Trải nghiệm phim với bạn bè trong sự đồng bộ hoàn hảo. Tạo phòng, trò chuyện theo thời gian thực và thưởng thức điện ảnh từ bất cứ đâu.
-            </p>
+              <div className="relative z-10 container mx-auto px-4 text-center space-y-8">
+                <h1 className="text-5xl md:text-7xl font-bold text-foreground drop-shadow-lg animate-in fade-in slide-in-from-bottom-4 duration-1000">
+                  Xem cùng nhau,<br />
+                  <span className="bg-gradient-primary bg-clip-text text-transparent">Cảm nhận cùng nhau</span>
+                </h1>
+                <p className="text-xl md:text-2xl text-foreground/90 max-w-2xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-1000 delay-150">
+                  Trải nghiệm phim với bạn bè trong sự đồng bộ hoàn hảo.
+                </p>
+                <div className="flex flex-col sm:flex-row gap-4 justify-center animate-in fade-in slide-in-from-bottom-4 duration-1000 delay-300">
+                  <Button size="lg" className="bg-gradient-primary text-lg px-8 py-6 shadow-glow" onClick={() => document.getElementById('movie-section')?.scrollIntoView({ behavior: 'smooth' })}>
+                    <Play className="mr-2 h-5 w-5" /> Khám phá ngay
+                  </Button>
+                </div>
+              </div>
+            </section>
+        )}
 
-            <div className="flex flex-col sm:flex-row gap-4 justify-center animate-in fade-in slide-in-from-bottom-4 duration-1000 delay-300">
-              <Link to="/movies">
-                <Button size="lg" className="bg-gradient-primary hover:opacity-90 transition-opacity text-lg px-8 py-6 shadow-glow">
-                  <Play className="mr-2 h-5 w-5" />
-                  Xem phim ngay
-                </Button>
-              </Link>
-              {/* Nếu chưa đăng nhập thì hiện nút này, logic này có thể tùy chỉnh */}
-              <Link to="/rooms">
-                <Button size="lg" variant="outline" className="border-2 text-lg px-8 py-6 bg-black/50 backdrop-blur-sm hover:bg-black/70">
-                  <Users className="mr-2 h-5 w-5" />
-                  Có mã phòng?
-                </Button>
-              </Link>
-            </div>
-          </div>
-        </section>
+        {/* 4. Features Section
+            - Chỉ hiện khi không tìm kiếm (để đỡ rối mắt)
+        */}
+        {!searchKeyword && (
+            <section className="py-20 bg-card/50">
+              <div className="container mx-auto px-4">
+                <h2 className="text-3xl md:text-4xl font-bold text-center mb-12">
+                  Tại sao chọn <span className="text-primary">WatchTogether</span>?
+                </h2>
 
-        {/* Features Section (Giữ nguyên) */}
-        <section className="py-20 bg-card/50">
+                <div className="grid md:grid-cols-3 gap-8">
+                  <div
+                      className="p-6 rounded-lg bg-background border border-border hover:border-primary transition-all duration-300 hover:shadow-glow space-y-4">
+                    <div className="w-12 h-12 rounded-lg bg-gradient-primary flex items-center justify-center">
+                      <Users className="h-6 w-6 text-white"/>
+                    </div>
+                    <h3 className="text-xl font-bold">Xem cùng nhau</h3>
+                    <p className="text-muted-foreground">
+                      Phát đồng bộ hoàn hảo với bạn bè và gia đình. Phát, tạm dừng và tua cùng nhau theo thời gian thực.
+                    </p>
+                  </div>
+
+                  <div
+                      className="p-6 rounded-lg bg-background border border-border hover:border-primary transition-all duration-300 hover:shadow-glow space-y-4">
+                    <div className="w-12 h-12 rounded-lg bg-gradient-primary flex items-center justify-center">
+                      <Film className="h-6 w-6 text-white"/>
+                    </div>
+                    <h3 className="text-xl font-bold">Thư viện khổng lồ</h3>
+                    <p className="text-muted-foreground">
+                      Truy cập hàng nghìn bộ phim và chương trình truyền hình thuộc mọi thể loại. Nội dung mới được bổ
+                      sung hàng tuần.
+                    </p>
+                  </div>
+
+                  <div
+                      className="p-6 rounded-lg bg-background border border-border hover:border-primary transition-all duration-300 hover:shadow-glow space-y-4">
+                    <div className="w-12 h-12 rounded-lg bg-gradient-primary flex items-center justify-center">
+                      <Star className="h-6 w-6 text-white"/>
+                    </div>
+                    <h3 className="text-xl font-bold">Đánh giá & Nhận xét</h3>
+                    <p className="text-muted-foreground">
+                      Chia sẻ suy nghĩ của bạn và khám phá những gì người khác nghĩ. Xây dựng danh sách xem của bạn với
+                      đánh giá cộng đồng.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </section>
+        )}
+
+        {/* 5. MOVIE SECTION (HIỂN THỊ KẾT QUẢ)
+            Đây là phần quan trọng nhất thay đổi theo logic tìm kiếm
+        */}
+        <section id="movie-section" className={`py-20 ${searchKeyword ? 'mt-16' : ''}`}>
           <div className="container mx-auto px-4">
-            <h2 className="text-3xl md:text-4xl font-bold text-center mb-12">
-              Tại sao chọn <span className="text-primary">WatchTogether</span>?
-            </h2>
 
-            <div className="grid md:grid-cols-3 gap-8">
-              <div className="p-6 rounded-lg bg-background border border-border hover:border-primary transition-all duration-300 hover:shadow-glow space-y-4">
-                <div className="w-12 h-12 rounded-lg bg-gradient-primary flex items-center justify-center">
-                  <Users className="h-6 w-6 text-white" />
-                </div>
-                <h3 className="text-xl font-bold">Xem cùng nhau</h3>
-                <p className="text-muted-foreground">
-                  Phát đồng bộ hoàn hảo với bạn bè và gia đình. Phát, tạm dừng và tua cùng nhau theo thời gian thực qua WebSocket.
-                </p>
-              </div>
-
-              <div className="p-6 rounded-lg bg-background border border-border hover:border-primary transition-all duration-300 hover:shadow-glow space-y-4">
-                <div className="w-12 h-12 rounded-lg bg-gradient-primary flex items-center justify-center">
-                  <Film className="h-6 w-6 text-white" />
-                </div>
-                <h3 className="text-xl font-bold">Thư viện đa dạng</h3>
-                <p className="text-muted-foreground">
-                  Hệ thống hỗ trợ cập nhật phim liên tục, phân loại theo nhiều thể loại hấp dẫn.
-                </p>
-              </div>
-
-              <div className="p-6 rounded-lg bg-background border border-border hover:border-primary transition-all duration-300 hover:shadow-glow space-y-4">
-                <div className="w-12 h-12 rounded-lg bg-gradient-primary flex items-center justify-center">
-                  <Star className="h-6 w-6 text-white" />
-                </div>
-                <h3 className="text-xl font-bold">Tương tác thực</h3>
-                <p className="text-muted-foreground">
-                  Chat trực tiếp ngay trong phòng chiếu. Chia sẻ cảm xúc và bình luận về bộ phim đang xem.
-                </p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Trending Movies Section */}
-        <section className="py-20">
-          <div className="container mx-auto px-4">
+            {/* TIÊU ĐỀ THAY ĐỔI THEO TRẠNG THÁI */}
             <div className="flex items-center justify-between mb-8">
-              <h2 className="text-3xl md:text-4xl font-bold flex items-center gap-2">
-                <TrendingUp className="h-8 w-8 text-primary" />
-                Phim mới cập nhật
-              </h2>
-              <Link to="/movies">
-                <Button variant="outline">Xem tất cả</Button>
-              </Link>
+              <div className="flex items-center gap-3">
+                {searchKeyword ? (
+                    <>
+                      <Search className="h-8 w-8 text-primary"/>
+                      <div>
+                        <h2 className="text-3xl font-bold">Kết quả tìm kiếm</h2>
+                        <p className="text-muted-foreground">Từ khóa: <span
+                            className="text-primary font-bold">"{searchKeyword}"</span></p>
+                      </div>
+                    </>
+                ) : (
+                    <>
+                      <TrendingUp className="h-8 w-8 text-primary"/>
+                      <h2 className="text-3xl md:text-4xl font-bold">Phim mới cập nhật</h2>
+                    </>
+                )}
+              </div>
+
+              {/* Nút xóa tìm kiếm */}
+              {searchKeyword && (
+                  <Button variant="outline" onClick={clearSearch} className="gap-2">
+                    <X className="h-4 w-4"/> Quay lại trang chủ
+                  </Button>
+              )}
             </div>
 
             {loading ? (
-                <div className="flex justify-center py-10">
-                  <Loader2 className="h-10 w-10 animate-spin text-primary" />
+                <div className="flex flex-col items-center justify-center py-20">
+                  <Loader2 className="h-10 w-10 animate-spin text-primary mb-4"/>
+                  <p className="text-muted-foreground">Đang tải phim...</p>
                 </div>
             ) : (
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-6">
-                  {trendingMovies.map((movie) => (
-                      <MovieCard
-                          key={movie.id}
-                          id={movie.id}
-                          title={movie.title}
-                          // Xử lý ảnh: dùng hàm getImageUrl để nối domain backend
-                          poster={getImageUrl(movie.poster)}
-                          // Xử lý các trường khác cho khớp props
-                          rating={movie.rating || 0}
-                          year={movie.releaseYear?.toString()}
-                          duration={`${movie.duration} phút`}
-                          genre={movie.category?.name || "Phim hay"}
-                      />
-                  ))}
-
-                  {trendingMovies.length === 0 && (
-                      <div className="col-span-full text-center text-muted-foreground py-10">
-                        Chưa có phim nào trong hệ thống. Hãy vào trang Admin để thêm phim.
+                <>
+                  {movies.length > 0 ? (
+                      // GRID PHIM
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6">
+                        {movies.map((movie) => (
+                            <MovieCard
+                                key={movie.id}
+                                id={movie.id}
+                                title={movie.title}
+                                poster={movie.poster} // MovieCard đã tự gọi getImageUrl bên trong hoặc gọi ở đây đều được
+                                rating={movie.rating}
+                                year={movie.releaseYear?.toString()}
+                                duration={`${movie.duration}`}
+                                genre={movie.category?.name}
+                            />
+                        ))}
+                      </div>
+                  ) : (
+                      // TRƯỜNG HỢP KHÔNG TÌM THẤY
+                      <div className="flex flex-col items-center justify-center py-20 border-2 border-dashed border-border rounded-xl bg-card/30">
+                        <Frown className="h-16 w-16 mb-4 opacity-50 text-muted-foreground" />
+                        <h3 className="text-xl font-bold mb-2">Không tìm thấy phim nào</h3>
+                        <p className="text-muted-foreground mb-6">Thử tìm kiếm với từ khóa khác xem sao?</p>
+                        <Button onClick={clearSearch} className="bg-gradient-primary">
+                          Xem tất cả phim
+                        </Button>
                       </div>
                   )}
-                </div>
+                </>
             )}
           </div>
         </section>
 
-        {/* CTA Section (Giữ nguyên) */}
-        <section className="py-20 bg-gradient-primary relative overflow-hidden">
-          <div className="absolute inset-0 opacity-10">
-            <div className="absolute inset-0" style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'60\' height=\'60\' viewBox=\'0 0 60 60\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'none\' fill-rule=\'evenodd\'%3E%3Cg fill=\'%23ffffff\' fill-opacity=\'1\'%3E%3Cpath d=\'M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z\'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")' }} />
-          </div>
-          <div className="container mx-auto px-4 text-center space-y-6 relative z-10">
-            <h2 className="text-3xl md:text-5xl font-bold text-white">
-              Sẵn sàng bắt đầu xem?
-            </h2>
-            <p className="text-xl text-white/90 max-w-2xl mx-auto">
-              Tham gia cùng hàng nghìn người yêu phim đang trải nghiệm điện ảnh cùng nhau
-            </p>
-            <Link to="/register">
-              <Button size="lg" variant="secondary" className="bg-background text-foreground hover:bg-background/90 text-lg px-8 py-6">
-                Bắt đầu miễn phí
-              </Button>
-            </Link>
-          </div>
-        </section>
-
         {/* Footer */}
-        <footer className="py-12 border-t border-border">
-          <div className="container mx-auto px-4">
-            <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-              <div className="flex items-center gap-2">
-                <Film className="h-6 w-6 text-primary" />
-                <span className="font-bold text-lg">WatchTogether</span>
-              </div>
-              <p className="text-muted-foreground text-sm">
-                © 2025 WatchTogether - Đồ án cơ sở 4 (Nga & An).
-              </p>
-            </div>
+        <footer className="py-12 border-t border-border mt-auto">
+          <div className="container mx-auto px-4 text-center md:text-left">
+            <p className="text-muted-foreground text-sm">© 2025 WatchTogether - Đồ án cơ sở 4.</p>
           </div>
         </footer>
       </div>
