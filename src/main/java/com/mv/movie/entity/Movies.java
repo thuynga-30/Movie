@@ -11,7 +11,7 @@ import java.time.LocalDateTime;
 public class Movies {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    private Integer id;
     @Column(nullable = false)
     private String title;
     @Column(columnDefinition = "TEXT")
@@ -49,11 +49,12 @@ public class Movies {
     // Getter & Setter (Lombok @Data đã tự sinh, nếu không dùng Lombok thì tự viết)
     public int getViewCount() { return viewCount; }
     public void setViewCount(int viewCount) { this.viewCount = viewCount; }
+
     public Integer getId() {
-        return Math.toIntExact(id);
+        return id;
     }
 
-    public void setId(Long id) {
+    public void setId(Integer id) {
         this.id = id;
     }
 
@@ -128,4 +129,17 @@ public class Movies {
     public void setUpdatedAt(LocalDateTime updatedAt) {
         this.updatedAt = updatedAt;
     }
+    @Transient // Đánh dấu field này không nằm trong Database
+    private Double averageRating;
+
+    // Getter (Bắt buộc để API trả về JSON có field này)
+    public Double getAverageRating() {
+        return averageRating == null ? 0.0 : averageRating;
+    }
+
+    // Setter (Để Controller gán giá trị vào)
+    public void setAverageRating(Double averageRating) {
+        this.averageRating = averageRating;
+    }
+
 }

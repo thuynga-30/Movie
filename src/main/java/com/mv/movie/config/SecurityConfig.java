@@ -41,6 +41,7 @@ public class SecurityConfig {
                         // Cho phép xem phim
                         .requestMatchers(HttpMethod.GET, "/api/movies/**", "/api/categories/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/categories/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/reviews/**").permitAll()
 
                         // Admin
                         .requestMatchers("/api/admin/**").hasAuthority("admin")

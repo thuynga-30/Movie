@@ -110,4 +110,12 @@ public class WatchRoom {
     public void setId(Integer id) {
         this.id = id;
     }
+
+    public String getRoomPassword() {
+        return roomPassword;
+    }
+
+    public void setRoomPassword(String roomPassword) {
+        this.roomPassword = roomPassword;
+    }
 }

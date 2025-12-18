@@ -62,7 +62,7 @@ public class MovieController {
 
     // --- HÀM PHỤ TRỢ ĐỂ TÍNH VÀ LÀM TRÒN ĐIỂM ---
     private void calculateAndSetRating(Movies movie) {
-        Double avg = ratingRepository.getAverageRating(movie.getId());
+        Double avg = ratingRepository.getAverageRating(Long.valueOf(movie.getId()));
 
         if (avg != null) {
             // Làm tròn 1 chữ số thập phân (VD: 4.6666 -> 4.7)

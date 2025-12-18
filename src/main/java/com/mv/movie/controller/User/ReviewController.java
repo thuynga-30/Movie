@@ -95,7 +95,7 @@ public class ReviewController {
     // 4. Lấy điểm trung bình của phim (Công khai)
     @GetMapping("/ratings/{movieId}/average")
     public ResponseEntity<?> getAverageRating(@PathVariable Integer movieId) {
-        Double avg = ratingRepository.getAverageRating(movieId);
+        Double avg = ratingRepository.getAverageRating(Long.valueOf(movieId));
         // Nếu chưa ai đánh giá thì trả về 0
         return ResponseEntity.ok(avg == null ? 0.0 : Math.round(avg * 10.0) / 10.0); // Làm tròn 1 chữ số thập phân
     }

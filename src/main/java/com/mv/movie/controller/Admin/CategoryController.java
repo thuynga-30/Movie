@@ -10,7 +10,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/categories")
-@CrossOrigin(origins = "http://localhost:3000", allowedHeaders = "*") // Cho phép Frontend gọi
+//@CrossOrigin(origins = "http://localhost:3000", allowedHeaders = "*") // Cho phép Frontend gọi
 public class CategoryController {
 
     @Autowired
