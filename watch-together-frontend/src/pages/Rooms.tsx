@@ -33,8 +33,8 @@ const Rooms = () => {
 
   // Data States
   const [movies, setMovies] = useState<any[]>([]);
-  const [myRooms, setMyRooms] = useState<any[]>([]); // Phòng của tôi
-  const [activeRooms, setActiveRooms] = useState<any[]>([]); // Phòng công khai
+  const [myRooms, setMyRooms] = useState<any[]>([]);
+  const [activeRooms, setActiveRooms] = useState<any[]>([]);
 
   // Create Room States
   const [selectedMovieId, setSelectedMovieId] = useState("");
@@ -57,7 +57,8 @@ const Rooms = () => {
   };
 
   const fetchMyRooms = async () => {
-    if (!localStorage.getItem("token")) return;
+    // Chỉ fetch phòng của tôi nếu đã đăng nhập
+    if (!localStorage.getItem("user")) return;
     try {
       const res = await api.get("/api/rooms/my-rooms");
       setMyRooms(res.data);
@@ -71,8 +72,23 @@ const Rooms = () => {
     } catch (e) { console.error(e); }
   };
 
+  // ✅ HÀM KIỂM TRA ĐĂNG NHẬP (Dùng chung)
+  const checkAuth = () => {
+    const user = localStorage.getItem("user");
+    if (!user) {
+      toast({
+        variant: "destructive",
+        title: "Yêu cầu đăng nhập",
+        description: "Vui lòng đăng nhập để thực hiện chức năng này!",
+      });
+      return false;
+    }
+    return true;
+  };
+
   // 2. Tạo phòng
   const handleCreateRoom = async () => {
+    if (!checkAuth()) return; // Chặn nếu chưa login
     if (!selectedMovieId) return toast({ variant: "destructive", title: "Chưa chọn phim!" });
     if (roomPrivacy === "private" && !roomPassword) return toast({ variant: "destructive", title: "Cần mật khẩu cho phòng riêng tư!" });
 
@@ -97,11 +113,12 @@ const Rooms = () => {
 
   // 3. Vào phòng bằng mã
   const handleJoinRoom = async () => {
+    if (!checkAuth()) return; // Chặn nếu chưa login
     if (!joinCode.trim()) return;
     try {
       await api.post("/api/rooms/check-join", { roomCode: joinCode, password: joinPassword });
       navigate(`/room/${joinCode}`);
-    } catch (error) {
+    } catch (error: any) {
       if (error.response?.status === 403) {
         toast({ variant: "destructive", title: "Lỗi", description: "Mật khẩu phòng không đúng." });
       } else {
@@ -112,12 +129,13 @@ const Rooms = () => {
 
   // 4. Xóa phòng
   const handleDeleteRoom = async (roomCode: string) => {
+    if (!checkAuth()) return;
     if (!confirm("Bạn có chắc chắn muốn giải tán phòng này?")) return;
     try {
       await api.delete(`/api/rooms/${roomCode}`);
       toast({ title: "Đã xóa", description: `Đã giải tán phòng ${roomCode}` });
       setMyRooms(myRooms.filter(r => r.roomCode !== roomCode));
-      setActiveRooms(activeRooms.filter(r => r.roomCode !== roomCode)); // Cập nhật cả list công khai nếu có
+      setActiveRooms(activeRooms.filter(r => r.roomCode !== roomCode));
     } catch (e) {
       toast({ variant: "destructive", title: "Lỗi", description: "Không thể xóa phòng." });
     }
@@ -157,7 +175,11 @@ const Rooms = () => {
               {/* TẠO PHÒNG */}
               <Card className="p-6 bg-card border-border shadow-lg">
                 <h3 className="text-xl font-bold mb-4 flex items-center gap-2"><Plus className="text-primary"/> Tạo phòng mới</h3>
-                <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+                <Dialog open={isCreateOpen} onOpenChange={(val) => {
+                  // ✅ CHẶN KHÔNG CHO MỞ MODAL NẾU CHƯA LOGIN
+                  if (val && !checkAuth()) return;
+                  setIsCreateOpen(val);
+                }}>
                   <DialogTrigger asChild>
                     <Button className="w-full h-12 text-lg border-2 border-dashed border-primary/50 hover:border-primary bg-transparent text-primary hover:bg-primary/10">
                       + Bấm để tạo phòng
@@ -217,7 +239,9 @@ const Rooms = () => {
                             </div>
                           </div>
                           <div className="flex gap-2 mt-auto">
-                            <Button size="sm" className="flex-1 bg-primary/10 text-primary hover:bg-primary/20" onClick={() => navigate(`/room/${room.roomCode}`)}>
+                            <Button size="sm" className="flex-1 bg-primary/10 text-primary hover:bg-primary/20" onClick={() => {
+                              if(checkAuth()) navigate(`/room/${room.roomCode}`);
+                            }}>
                               <PlayCircle className="h-4 w-4 mr-1" /> Vào lại
                             </Button>
                             <Button size="sm" variant="destructive" onClick={() => handleDeleteRoom(room.roomCode)}>
@@ -242,11 +266,15 @@ const Rooms = () => {
                           <div className="relative h-40 overflow-hidden">
                             <img src={getImageUrl(room.movie?.poster)} className="w-full h-full object-cover transition-transform group-hover:scale-110" />
                             <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                              <Link to={`/room/${room.roomCode}`}>
-                                <Button className="rounded-full bg-primary hover:bg-primary/90">
-                                  <PlayCircle className="mr-2 h-4 w-4" /> Tham gia
-                                </Button>
-                              </Link>
+                              {/* ✅ THAY ĐỔI LINK THÀNH BUTTON ĐỂ CHECK AUTH */}
+                              <Button
+                                  className="rounded-full bg-primary hover:bg-primary/90"
+                                  onClick={() => {
+                                    if(checkAuth()) navigate(`/room/${room.roomCode}`);
+                                  }}
+                              >
+                                <PlayCircle className="mr-2 h-4 w-4" /> Tham gia
+                              </Button>
                             </div>
                           </div>
                           <div className="p-4">

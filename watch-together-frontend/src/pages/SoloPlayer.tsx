@@ -5,49 +5,59 @@ import { ArrowLeft, Loader2, AlertCircle } from "lucide-react";
 import { api, getImageUrl } from "@/services/api";
 
 const SoloPlayer = () => {
-    const { movieId } = useParams();
+    // ✅ Sửa thành 'id' để khớp với Route path="/watch/solo/:id"
+    const { id } = useParams();
     const navigate = useNavigate();
 
     const [movie, setMovie] = useState<any>(null);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(false);
 
     useEffect(() => {
         const fetchMovie = async () => {
             try {
                 setLoading(true);
-                const res = await api.get(`/api/movies/${movieId}`);
+                const res = await api.get(`/api/movies/${id}`);
                 setMovie(res.data);
             } catch (error) {
-                console.error(error);
+                console.error("Lỗi tải phim:", error);
+                setError(true);
             } finally {
                 setLoading(false);
             }
         };
-        if (movieId) fetchMovie();
-    }, [movieId]);
+        if (id) fetchMovie();
+    }, [id]);
 
     // --- HÀM XỬ LÝ LINK YOUTUBE ---
     const getYouTubeEmbedUrl = (url: string) => {
         let videoId = "";
-
-        // Trường hợp 1: Link dạng youtu.be/ID
         if (url.includes("youtu.be/")) {
             videoId = url.split("youtu.be/")[1]?.split("?")[0];
-        }
-        // Trường hợp 2: Link dạng youtube.com/watch?v=ID
-        else if (url.includes("v=")) {
+        } else if (url.includes("v=")) {
             videoId = url.split("v=")[1]?.split("&")[0];
         }
 
-        // Trả về link nhúng chuẩn của YouTube
         if (videoId) {
-            return `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0`;
+            // Thêm autoplay=1 và mute=1 để trình duyệt cho phép tự chạy
+            return `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=0&rel=0&modestbranding=1`;
         }
         return "";
     };
 
-    if (loading) return <div className="h-screen bg-black flex items-center justify-center text-white"><Loader2 className="animate-spin" /></div>;
-    if (!movie) return null;
+    if (loading) return (
+        <div className="h-screen bg-black flex items-center justify-center text-white">
+            <Loader2 className="animate-spin h-10 w-10 text-primary" />
+        </div>
+    );
+
+    if (error || !movie) return (
+        <div className="h-screen bg-black flex flex-col items-center justify-center text-white">
+            <AlertCircle className="h-12 w-12 text-destructive mb-4" />
+            <p>Không thể tải phim hoặc link phim bị hỏng.</p>
+            <Button className="mt-4" onClick={() => navigate("/")}>Quay về trang chủ</Button>
+        </div>
+    );
 
     const finalUrl = getImageUrl(movie.videoUrl);
     const isYouTube = finalUrl.includes("youtube.com") || finalUrl.includes("youtu.be");
@@ -55,48 +65,46 @@ const SoloPlayer = () => {
 
     return (
         <div className="h-screen w-screen bg-black flex flex-col relative overflow-hidden">
-
-            {/* Nút Back */}
-            <div className="absolute top-4 left-4 z-50">
-                <Button variant="secondary" size="icon" className="rounded-full bg-black/50 hover:bg-black/80 text-white" onClick={() => navigate(-1)}>
+            {/* Nút Quay lại */}
+            <div className="absolute top-4 left-4 z-50 transition-opacity opacity-0 hover:opacity-100 group">
+                <Button
+                    variant="secondary"
+                    size="icon"
+                    className="rounded-full bg-black/50 hover:bg-black/80 text-white border-white/10"
+                    onClick={() => navigate(-1)}
+                >
                     <ArrowLeft className="h-6 w-6" />
                 </Button>
             </div>
 
             {/* KHUNG PHÁT VIDEO */}
             <div className="absolute inset-0 bg-black flex items-center justify-center z-0">
-
-                {/* TRƯỜNG HỢP 1: YOUTUBE */}
                 {isYouTube ? (
                     <iframe
                         src={embedUrl}
-                        title="YouTube Video"
-                        className="w-full h-full"
-                        frameBorder="0"
+                        title={movie.title}
+                        className="w-full h-full border-none"
+                        // ✅ Thêm autoplay vào đây để hỗ trợ YouTube
                         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                         allowFullScreen
                     />
                 ) : (
-                    /* TRƯỜNG HỢP 2: FILE MP4 (Từ máy tính hoặc link trực tiếp) */
                     <video
                         src={finalUrl}
-                        className="w-full h-full object-contain"
+                        className="w-full h-full object-contain shadow-2xl"
                         controls
                         autoPlay
                     >
                         Trình duyệt của bạn không hỗ trợ thẻ video.
                     </video>
                 )}
-
             </div>
 
-            {/* Thông tin phim */}
-            {/*<div className="absolute bottom-0 left-0 right-0 z-20 bg-gradient-to-t from-black/90 to-transparent p-8 pb-10 pointer-events-none">*/}
-            {/*    <div className="container mx-auto">*/}
-            {/*        <h1 className="text-3xl font-bold text-white mb-2">{movie.title}</h1>*/}
-            {/*        <p className="text-gray-400 text-sm line-clamp-2">{movie.description}</p>*/}
-            {/*    </div>*/}
-            {/*</div>*/}
+            {/* Overlay thông tin khi hover (Tùy chọn) */}
+            <div className="absolute top-0 left-0 right-0 p-6 bg-gradient-to-b from-black/80 to-transparent pointer-events-none transition-opacity opacity-0 group-hover:opacity-100">
+                <h1 className="text-xl font-bold text-white">{movie.title}</h1>
+                <p className="text-xs text-gray-400">Đang xem: Một mình</p>
+            </div>
         </div>
     );
 };

@@ -141,9 +141,8 @@ const MovieDetail = () => {
       }
     }
 
-    // 2. Chuyển hướng (Logic cũ của bạn định làm gì thì làm ở đây, ví dụ mở trang watch)
-    // Ở đây mình tạm chuyển sang trang watch/id
-    navigate(`/watch/movie/${id}`);
+      navigate(`/watch/solo/${id}`);
+
   };
 
   const handleWatchTogether = async () => {

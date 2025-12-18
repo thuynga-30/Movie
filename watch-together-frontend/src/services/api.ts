@@ -1,7 +1,7 @@
 import axios from "axios";
 
 // 1. Cấu hình đường dẫn gốc (Backend chạy port 8080)
-export const API_BASE_URL = "http://localhost:8080";
+export const API_BASE_URL = "http://192.168.2.35:8080";
 
 export const api = axios.create({
     baseURL: API_BASE_URL,

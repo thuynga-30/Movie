@@ -37,7 +37,7 @@ const App = () => (
           <Route path="/room/:id" element={<WatchRoom />} />
 
           {/* Route MỚI cho Xem Một Mình */}
-          <Route path="/watch/movie/:movieId" element={<SoloPlayer />} />
+          <Route path="/watch/solo/:id" element={<SoloPlayer />} />
           <Route path="/rooms" element={<Rooms />} />
           <Route path="/library" element={<Library />} />
           <Route path="/profile" element={<Profile />} />

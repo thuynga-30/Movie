@@ -3,8 +3,8 @@ import { useNavigate } from "react-router-dom";
 import Navbar from "@/components/Navbar";
 import MovieCard from "@/components/MovieCard";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Heart, History, Star, Loader2 } from "lucide-react";
-import { api, getImageUrl } from "@/services/api"; // Import api & helper
+import { Heart, History, Star, Loader2, Film } from "lucide-react";
+import { api, getImageUrl } from "@/services/api";
 
 const Library = () => {
   const navigate = useNavigate();
@@ -12,10 +12,32 @@ const Library = () => {
   const [history, setHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Lấy dữ liệu khi trang tải
+  // --- HÀM 1: Lấy đúng object phim ---
+  // API có thể trả về: { movie: {...} } HOẶC trực tiếp {...}
+  // Hàm này giúp chuẩn hóa về một dạng duy nhất
+  const extractMovieData = (item: any) => {
+    if (!item) return null;
+    // Nếu item có thuộc tính "movie" bên trong (dạng Interaction) -> lấy movie
+    if (item.movie) return item.movie;
+    // Nếu không, coi chính item là movie
+    return item;
+  };
+
+  // --- HÀM 2: Lấy Rating thông minh ---
+  // Tìm mọi ngóc ngách để lấy điểm số
+  const getRatingValue = (movie: any) => {
+    if (!movie) return 0;
+    const score =
+        movie.averageRating ??
+        movie.rating ??
+        movie.vote_average ??
+        movie.score ??
+        0;
+    return parseFloat(score); // Trả về số để MovieCard tự xử lý
+  };
+
   useEffect(() => {
     const fetchData = async () => {
-      // Kiểm tra đăng nhập
       const token = localStorage.getItem("token");
       if (!token) {
         navigate("/login");
@@ -24,24 +46,28 @@ const Library = () => {
 
       try {
         setLoading(true);
-        // Gọi song song 2 API
-        // GET /api/interactions/favorites
-        // GET /api/interactions/history
         const [favRes, histRes] = await Promise.all([
           api.get("/api/interactions/favorites"),
           api.get("/api/interactions/history")
         ]);
 
-        setFavorites(favRes.data);
+        console.log("🔥 Raw Favorites:", favRes.data); // Xem log này để check
+        console.log("🔥 Raw History:", histRes.data);
 
-        // Lịch sử trả về object { id, movie, watchedAt... } -> Cần map lấy movie ra
-        // Và có thể thêm trường progress nếu muốn
-        const historyMovies = histRes.data.map((h) => ({
-          ...h.movie,
-          // Thêm thông tin lịch sử vào movie để hiển thị (nếu cần)
-          watchedAt: h.watchedAt
-        }));
-        setHistory(historyMovies);
+        // XỬ LÝ FAVORITES: Dùng hàm extract để đảm bảo lấy đúng object movie
+        const validFavorites = Array.isArray(favRes.data)
+            ? favRes.data.map(extractMovieData).filter(Boolean)
+            : [];
+        setFavorites(validFavorites);
+
+        // XỬ LÝ HISTORY
+        const validHistory = Array.isArray(histRes.data)
+            ? histRes.data.map((h: any) => {
+              const movieData = extractMovieData(h);
+              return { ...movieData, watchedAt: h.watchedAt };
+            }).filter(Boolean)
+            : [];
+        setHistory(validHistory);
 
       } catch (error) {
         console.error("Lỗi tải thư viện:", error);
@@ -55,18 +81,16 @@ const Library = () => {
 
   return (
       <div className="min-h-screen bg-background">
-        {/* Navbar tự động lấy info từ localStorage */}
         <Navbar />
 
         <div className="pt-24 pb-12">
           <div className="container mx-auto px-4">
-            {/* Header */}
             <div className="mb-8">
               <h1 className="text-4xl md:text-5xl font-bold mb-4">
                 Thư viện <span className="text-primary">của tôi</span>
               </h1>
               <p className="text-muted-foreground text-lg">
-                Bộ sưu tập phim cá nhân của bạn
+                Bộ sưu tập phim cá nhân và lịch sử xem
               </p>
             </div>
 
@@ -78,36 +102,34 @@ const Library = () => {
                 <Tabs defaultValue="favorites" className="space-y-6">
                   <TabsList className="bg-card border border-border">
                     <TabsTrigger value="favorites" className="gap-2">
-                      <Heart className="h-4 w-4" />
-                      Yêu thích ({favorites.length})
+                      <Heart className="h-4 w-4" /> Yêu thích ({favorites.length})
                     </TabsTrigger>
                     <TabsTrigger value="history" className="gap-2">
-                      <History className="h-4 w-4" />
-                      Lịch sử xem ({history.length})
+                      <History className="h-4 w-4" /> Lịch sử xem ({history.length})
                     </TabsTrigger>
-                    {/* Tính năng Watchlist backend chưa có nên tạm ẩn hoặc để trống */}
-                    <TabsTrigger value="watchlist" className="gap-2">
-                      <Star className="h-4 w-4" />
-                      Danh sách xem (0)
-                    </TabsTrigger>
+
                   </TabsList>
 
                   {/* TAB YÊU THÍCH */}
                   <TabsContent value="favorites" className="space-y-6">
                     {favorites.length === 0 ? (
-                        <p className="text-muted-foreground">Bạn chưa có phim yêu thích nào.</p>
+                        <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
+                          <Film className="h-10 w-10 mb-2 opacity-20"/>
+                          <p>Bạn chưa có phim yêu thích nào.</p>
+                        </div>
                     ) : (
                         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-6">
-                          {favorites.map((movie) => (
+                          {favorites.map((movie, index) => (
                               <MovieCard
-                                  key={movie.id}
+                                  key={`fav-${movie.id}-${index}`}
                                   id={movie.id}
                                   title={movie.title}
                                   poster={getImageUrl(movie.poster)}
-                                  rating={movie.rating || 0}
+                                  // ✅ Gọi hàm lấy rating thông minh
+                                  rating={getRatingValue(movie)}
                                   year={movie.releaseYear?.toString()}
-                                  duration={`${movie.duration} phút`}
-                                  genre={movie.category?.name}
+                                  duration={`${movie.duration || 0} phút`}
+                                  genre={movie.category?.name || "Phim lẻ"}
                                   isFavorite={true}
                               />
                           ))}
@@ -118,28 +140,30 @@ const Library = () => {
                   {/* TAB LỊCH SỬ */}
                   <TabsContent value="history" className="space-y-6">
                     {history.length === 0 ? (
-                        <p className="text-muted-foreground">Bạn chưa xem phim nào.</p>
+                        <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
+                          <History className="h-10 w-10 mb-2 opacity-20"/>
+                          <p>Bạn chưa xem phim nào.</p>
+                        </div>
                     ) : (
                         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-6">
                           {history.map((movie, index) => (
                               <MovieCard
-                                  key={`${movie.id}-${index}`}
+                                  key={`hist-${movie.id}-${index}`}
                                   id={movie.id}
                                   title={movie.title}
                                   poster={getImageUrl(movie.poster)}
-                                  rating={movie.rating || 0}
+                                  // ✅ Gọi hàm lấy rating thông minh
+                                  rating={getRatingValue(movie)}
                                   year={movie.releaseYear?.toString()}
-                                  duration={`${movie.duration} phút`}
-                                  genre={movie.category?.name}
+                                  duration={`${movie.duration || 0} phút`}
+                                  genre={movie.category?.name || "Phim lẻ"}
                               />
                           ))}
                         </div>
                     )}
                   </TabsContent>
 
-                  <TabsContent value="watchlist" className="space-y-6">
-                    <p className="text-muted-foreground italic">Tính năng đang phát triển...</p>
-                  </TabsContent>
+
                 </Tabs>
             )}
           </div>
