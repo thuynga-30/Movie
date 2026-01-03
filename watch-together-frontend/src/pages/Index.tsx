@@ -1,13 +1,16 @@
-import { useState, useEffect } from "react";
-import { Link, useSearchParams, useNavigate } from "react-router-dom"; // Thêm useSearchParams, useNavigate
+import { useState, useEffect, useRef } from "react"; // Thêm useRef
+import { Link, useSearchParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Play, Users, Film, TrendingUp, Star, Loader2, Search, X, Frown } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import MovieCard from "@/components/MovieCard";
 import heroBanner from "@/assets/hero-banner.jpg";
 import { api, getImageUrl } from "@/services/api";
+// 1. IMPORT THƯ VIỆN SOCKET
+import SockJS from 'sockjs-client';
+import Stomp from 'stompjs';
+import { useToast } from "@/hooks/use-toast"; // Import Toast để thông báo
 
-// Định nghĩa kiểu dữ liệu phim
 interface Movie {
   id: number;
   title: string;
@@ -20,16 +23,65 @@ interface Movie {
 
 const Index = () => {
   const navigate = useNavigate();
+  const { toast } = useToast(); // Hook thông báo
 
-  // 1. Lấy từ khóa tìm kiếm từ URL
   const [searchParams] = useSearchParams();
   const searchKeyword = searchParams.get("search");
 
-  // Đổi tên state từ trendingMovies -> movies (vì nó chứa cả kết quả tìm kiếm)
   const [movies, setMovies] = useState<Movie[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // 2. Gọi API (Tự động chạy lại khi searchKeyword thay đổi)
+  // Ref để giữ searchKeyword hiện tại trong callback của socket
+  // (Tránh closure stale state khi socket chạy)
+  const searchKeywordRef = useRef(searchKeyword);
+
+  // Cập nhật ref mỗi khi searchKeyword thay đổi
+  useEffect(() => {
+    searchKeywordRef.current = searchKeyword;
+  }, [searchKeyword]);
+
+  // 2. LOGIC SOCKET: LẮNG NGHE PHIM MỚI
+  useEffect(() => {
+    // Kết nối đến endpoint /ws mà bạn đã cấu hình trong WebSocketConfig.java
+    const socket = new SockJS('http://localhost:8080/ws');
+    const client = Stomp.over(socket);
+
+    // Tắt log debug của stomp cho gọn console
+    client.debug = () => {};
+
+    client.connect({}, () => {
+      // Đăng ký lắng nghe kênh "/topic/movies" (Kênh Admin gửi tin)
+      client.subscribe('/topic/movies', (message) => {
+        const newMovie: Movie = JSON.parse(message.body);
+
+        // A. Hiện thông báo Toast cho đẹp
+        toast({
+          title: "🎬 Phim mới vừa lên sóng!",
+          description: `Phim "${newMovie.title}" (${newMovie.releaseYear}) vừa được thêm.`,
+          duration: 5000,
+          action: <Button variant="outline" size="sm" onClick={() => {
+            document.getElementById('movie-section')?.scrollIntoView({ behavior: 'smooth' });
+          }}>Xem</Button>
+        });
+
+        // B. Cập nhật danh sách phim (Real-time)
+        // Chỉ thêm vào list nếu người dùng đang ở trang chủ (không tìm kiếm)
+        // Nếu đang tìm kiếm "Hành động" mà phim mới là "Tình cảm" nhảy vào thì vô lý
+        if (!searchKeywordRef.current) {
+          setMovies(prevMovies => [newMovie, ...prevMovies]);
+        }
+      });
+    });
+
+    // Cleanup khi rời trang
+    return () => {
+      if (client && client.connected) {
+        client.disconnect(() => {});
+      }
+    };
+  }, [toast]); // Chỉ chạy 1 lần khi mount
+
+  // 3. LOGIC GỌI API (GIỮ NGUYÊN)
   useEffect(() => {
     const fetchMovies = async () => {
       try {
@@ -37,11 +89,9 @@ const Index = () => {
         let endpoint = "";
 
         if (searchKeyword) {
-          // A. Nếu đang tìm kiếm -> Gọi API Search
           endpoint = `/api/movies?search=${encodeURIComponent(searchKeyword)}`;
         } else {
-          // B. Nếu không tìm kiếm -> Gọi API Trending (Mới nhất)
-          endpoint = "/api/movies?page=0&size=12&sort=id,desc"; // Tăng size lên 12 để nhìn cho đã
+          endpoint = "/api/movies?page=0&size=12&sort=id,desc";
         }
 
         const response = await api.get(endpoint);
@@ -54,9 +104,8 @@ const Index = () => {
     };
 
     fetchMovies();
-  }, [searchKeyword]); // ✅ Quan trọng: Chạy lại khi URL thay đổi
+  }, [searchKeyword]);
 
-  // Hàm xóa tìm kiếm để về trang chủ
   const clearSearch = () => {
     navigate("/");
   };
@@ -65,10 +114,6 @@ const Index = () => {
       <div className="min-h-screen bg-background pb-20">
         <Navbar />
 
-        {/* 3. LOGIC HIỂN THỊ HERO BANNER
-            - Nếu đang ở trang chủ bình thường: HIỆN Banner.
-            - Nếu đang tìm kiếm: ẨN Banner đi để hiện kết quả ngay.
-        */}
         {!searchKeyword && (
             <section className="relative h-screen flex items-center justify-center overflow-hidden">
               <div className="absolute inset-0">
@@ -94,9 +139,6 @@ const Index = () => {
             </section>
         )}
 
-        {/* 4. Features Section
-            - Chỉ hiện khi không tìm kiếm (để đỡ rối mắt)
-        */}
         {!searchKeyword && (
             <section className="py-20 bg-card/50">
               <div className="container mx-auto px-4">
@@ -105,52 +147,36 @@ const Index = () => {
                 </h2>
 
                 <div className="grid md:grid-cols-3 gap-8">
-                  <div
-                      className="p-6 rounded-lg bg-background border border-border hover:border-primary transition-all duration-300 hover:shadow-glow space-y-4">
+                  <div className="p-6 rounded-lg bg-background border border-border hover:border-primary transition-all duration-300 hover:shadow-glow space-y-4">
                     <div className="w-12 h-12 rounded-lg bg-gradient-primary flex items-center justify-center">
                       <Users className="h-6 w-6 text-white"/>
                     </div>
                     <h3 className="text-xl font-bold">Xem cùng nhau</h3>
-                    <p className="text-muted-foreground">
-                      Phát đồng bộ hoàn hảo với bạn bè và gia đình. Phát, tạm dừng và tua cùng nhau theo thời gian thực.
-                    </p>
+                    <p className="text-muted-foreground">Phát đồng bộ hoàn hảo với bạn bè và gia đình.</p>
                   </div>
 
-                  <div
-                      className="p-6 rounded-lg bg-background border border-border hover:border-primary transition-all duration-300 hover:shadow-glow space-y-4">
+                  <div className="p-6 rounded-lg bg-background border border-border hover:border-primary transition-all duration-300 hover:shadow-glow space-y-4">
                     <div className="w-12 h-12 rounded-lg bg-gradient-primary flex items-center justify-center">
                       <Film className="h-6 w-6 text-white"/>
                     </div>
                     <h3 className="text-xl font-bold">Thư viện khổng lồ</h3>
-                    <p className="text-muted-foreground">
-                      Truy cập hàng nghìn bộ phim và chương trình truyền hình thuộc mọi thể loại. Nội dung mới được bổ
-                      sung hàng tuần.
-                    </p>
+                    <p className="text-muted-foreground">Hàng nghìn bộ phim và chương trình truyền hình.</p>
                   </div>
 
-                  <div
-                      className="p-6 rounded-lg bg-background border border-border hover:border-primary transition-all duration-300 hover:shadow-glow space-y-4">
+                  <div className="p-6 rounded-lg bg-background border border-border hover:border-primary transition-all duration-300 hover:shadow-glow space-y-4">
                     <div className="w-12 h-12 rounded-lg bg-gradient-primary flex items-center justify-center">
                       <Star className="h-6 w-6 text-white"/>
                     </div>
                     <h3 className="text-xl font-bold">Đánh giá & Nhận xét</h3>
-                    <p className="text-muted-foreground">
-                      Chia sẻ suy nghĩ của bạn và khám phá những gì người khác nghĩ. Xây dựng danh sách xem của bạn với
-                      đánh giá cộng đồng.
-                    </p>
+                    <p className="text-muted-foreground">Chia sẻ suy nghĩ của bạn với cộng đồng.</p>
                   </div>
                 </div>
               </div>
             </section>
         )}
 
-        {/* 5. MOVIE SECTION (HIỂN THỊ KẾT QUẢ)
-            Đây là phần quan trọng nhất thay đổi theo logic tìm kiếm
-        */}
         <section id="movie-section" className={`py-20 ${searchKeyword ? 'mt-16' : ''}`}>
           <div className="container mx-auto px-4">
-
-            {/* TIÊU ĐỀ THAY ĐỔI THEO TRẠNG THÁI */}
             <div className="flex items-center justify-between mb-8">
               <div className="flex items-center gap-3">
                 {searchKeyword ? (
@@ -158,8 +184,7 @@ const Index = () => {
                       <Search className="h-8 w-8 text-primary"/>
                       <div>
                         <h2 className="text-3xl font-bold">Kết quả tìm kiếm</h2>
-                        <p className="text-muted-foreground">Từ khóa: <span
-                            className="text-primary font-bold">"{searchKeyword}"</span></p>
+                        <p className="text-muted-foreground">Từ khóa: <span className="text-primary font-bold">"{searchKeyword}"</span></p>
                       </div>
                     </>
                 ) : (
@@ -170,7 +195,6 @@ const Index = () => {
                 )}
               </div>
 
-              {/* Nút xóa tìm kiếm */}
               {searchKeyword && (
                   <Button variant="outline" onClick={clearSearch} className="gap-2">
                     <X className="h-4 w-4"/> Quay lại trang chủ
@@ -186,14 +210,13 @@ const Index = () => {
             ) : (
                 <>
                   {movies.length > 0 ? (
-                      // GRID PHIM
                       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6">
                         {movies.map((movie) => (
                             <MovieCard
                                 key={movie.id}
                                 id={movie.id}
                                 title={movie.title}
-                                poster={movie.poster} // MovieCard đã tự gọi getImageUrl bên trong hoặc gọi ở đây đều được
+                                poster={movie.poster}
                                 rating={movie.rating}
                                 year={movie.releaseYear?.toString()}
                                 duration={`${movie.duration}`}
@@ -202,7 +225,6 @@ const Index = () => {
                         ))}
                       </div>
                   ) : (
-                      // TRƯỜNG HỢP KHÔNG TÌM THẤY
                       <div className="flex flex-col items-center justify-center py-20 border-2 border-dashed border-border rounded-xl bg-card/30">
                         <Frown className="h-16 w-16 mb-4 opacity-50 text-muted-foreground" />
                         <h3 className="text-xl font-bold mb-2">Không tìm thấy phim nào</h3>
@@ -217,7 +239,6 @@ const Index = () => {
           </div>
         </section>
 
-        {/* Footer */}
         <footer className="py-12 border-t border-border mt-auto">
           <div className="container mx-auto px-4 text-center md:text-left">
             <p className="text-muted-foreground text-sm">© 2025 WatchTogether - Đồ án cơ sở 4.</p>

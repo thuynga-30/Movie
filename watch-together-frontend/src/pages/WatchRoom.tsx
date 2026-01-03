@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Copy, ArrowLeft, Loader2, Send, Smile, X, Users, Play, Power } from "lucide-react"; // Thêm icon Power
+import { Copy, ArrowLeft, Loader2, Send, Smile, X, Users, Play, Power, Pause } from "lucide-react";
 import { api, API_BASE_URL, getImageUrl } from "@/services/api";
 import SockJS from "sockjs-client";
 import Stomp from "stompjs";
@@ -15,19 +15,24 @@ import { STICKERS } from "@/constants/stickers";
 import ReactPlayer from 'react-player';
 
 const WatchRoom = () => {
-  const { id } = useParams();
+  const { id } = useParams(); // id ở đây là RoomCode
   const navigate = useNavigate();
   const { toast } = useToast();
 
+  // Fix lỗi TypeScript cho ReactPlayer
   const ReactPlayerAny = ReactPlayer as any;
 
-  // Refs
+  // --- REFS (Lưu giá trị không gây render lại) ---
   const nativeVideoRef = useRef<HTMLVideoElement>(null);
   const youtubePlayerRef = useRef<any>(null);
   const stompClientRef = useRef<any>(null);
-  const isSyncing = useRef(false);
 
-  // Data States
+  // Cờ quan trọng: Chặn vòng lặp Sync
+  // true = Đang nhận lệnh từ Server (không gửi ngược lại)
+  // false = User tự bấm (gửi lệnh đi)
+  const isRemoteUpdate = useRef(false);
+
+  // --- STATES ---
   const [room, setRoom] = useState<any>(null);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [chatMessages, setChatMessages] = useState<any[]>([]);
@@ -38,176 +43,193 @@ const WatchRoom = () => {
   const [videoUrl, setVideoUrl] = useState("");
   const [isYouTube, setIsYouTube] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [hasInteracted, setHasInteracted] = useState(false);
-
-  // 🆕 STATE MỚI CHO TÍNH NĂNG KẾT THÚC
-  const [isEnded, setIsEnded] = useState(false);
+  const [hasInteracted, setHasInteracted] = useState(false); // User đã click vào màn hình chưa
+  const [isEnded, setIsEnded] = useState(false); // Trạng thái phim kết thúc
 
   const [showStickerPicker, setShowStickerPicker] = useState(false);
   const [onlineCount, setOnlineCount] = useState(1);
 
-  // 1. Check Login
+  // 1. KHỞI TẠO: CHECK USER & LẤY INFO PHÒNG
   useEffect(() => {
-    const userStr = localStorage.getItem("user");
-    if (!userStr) { navigate("/login"); return; }
-    setCurrentUser(JSON.parse(userStr));
-  }, []);
+    const initData = async () => {
+      const userStr = localStorage.getItem("user");
+      if (!userStr) { navigate("/login"); return; }
+      const user = JSON.parse(userStr);
+      setCurrentUser(user);
 
-  // 2. Init Room
-  useEffect(() => {
-    const initRoom = async () => {
       try {
-        setLoading(true);
+        // Lấy thông tin phòng qua API (Dữ liệu tĩnh ban đầu)
         const resRoom = await api.get(`/api/rooms/${id}`);
         setRoom(resRoom.data);
 
+        // Xử lý URL Video
         const rawUrl = resRoom.data.movie?.videoUrl;
         const url = getImageUrl(rawUrl);
         setVideoUrl(url);
+        setIsYouTube(url.includes("youtube.com") || url.includes("youtu.be"));
 
-        const isYT = url.includes("youtube.com") || url.includes("youtu.be");
-        setIsYouTube(isYT);
-
+        // Đồng bộ trạng thái ban đầu từ DB
         if (resRoom.data.isPlaying) setIsPlaying(true);
+        // (Lưu ý: setSeekTime ban đầu hơi khó chính xác tuyệt đối do video chưa load xong, sẽ sync lại qua socket sau)
 
+        // Lấy lịch sử chat cũ
         try {
           const resChat = await api.get(`/api/rooms/${id}/messages`);
-          setChatMessages(resChat.data.map((msg: any) => ({ ...msg, type: 'CHAT' })));
-        } catch (e) {}
+          // Map dữ liệu API về format chung của socket
+          setChatMessages(resChat.data.map((msg: any) => ({
+            type: 'CHAT',
+            message: msg.message,
+            senderName: msg.user?.username || msg.senderName,
+            avatar: msg.user?.avatar || msg.avatar
+          })));
+        } catch (e) { console.log("Chưa có tin nhắn cũ"); }
 
-        connectSocket(id!, resRoom.data.host?.username);
+        // KẾT NỐI SOCKET
+        connectSocket(id!, user.username, resRoom.data.host?.username);
+
       } catch (error) {
-        toast({ variant: "destructive", title: "Lỗi", description: "Phòng không tồn tại!" });
+        toast({ variant: "destructive", title: "Lỗi", description: "Phòng không tồn tại hoặc đã bị xóa!" });
         navigate("/rooms");
       } finally {
         setLoading(false);
       }
     };
-    if (id) initRoom();
-    return () => { if (stompClientRef.current) stompClientRef.current.disconnect(); };
+
+    if (id) initData();
+
+    // Cleanup khi rời trang
+    return () => {
+      if (stompClientRef.current) stompClientRef.current.disconnect();
+    };
   }, [id]);
 
-  // Socket Connection (Giữ nguyên)
-  const connectSocket = (roomCode: string, hostName: string) => {
+  // 2. HÀM KẾT NỐI SOCKET
+  const connectSocket = (roomCode: string, myUsername: string, hostUsername: string) => {
     const socket = new SockJS(`${API_BASE_URL}/ws`);
     const client = Stomp.over(socket);
-    client.debug = () => {};
+    client.debug = () => {}; // Tắt log debug console
 
     client.connect({}, () => {
       stompClientRef.current = client;
-      const me = JSON.parse(localStorage.getItem("user") || "{}");
-      client.send(`/app/join/${roomCode}`, {}, JSON.stringify({ type: 'JOIN', senderName: me.username }));
 
+      // Subscribe kênh chung của phòng
       client.subscribe(`/topic/room/${roomCode}`, (payload: any) => {
         const data = JSON.parse(payload.body);
-        handleSocketData(data, hostName, me.username);
+        handleSocketMessage(data, myUsername, hostUsername);
       });
+
+      // Gửi tin nhắn báo danh (JOIN)
+      client.send(`/app/join/${roomCode}`, {}, JSON.stringify({
+        type: 'JOIN',
+        senderName: myUsername
+      }));
+    }, (err) => {
+      console.error("Socket error", err);
+      toast({variant: "destructive", title: "Mất kết nối máy chủ!"});
     });
   };
 
-  // Player Control (Giữ nguyên)
-  const playerControl = {
-    getCurrentTime: () => {
-      if (isYouTube) {
-        const p = youtubePlayerRef.current;
-        if (p && typeof p.getCurrentTime === 'function') return p.getCurrentTime();
-        return 0;
-      }
-      return nativeVideoRef.current?.currentTime || 0;
-    },
-    seekTo: (time: number) => {
-      if (isYouTube) {
-        const p = youtubePlayerRef.current;
-        if (p && typeof p.seekTo === 'function') p.seekTo(time, 'seconds');
-      }
-      else if (nativeVideoRef.current) nativeVideoRef.current.currentTime = time;
-    },
-    play: () => {
-      setIsPlaying(true);
-      setIsEnded(false); // Reset trạng thái Ended
-      if (!isYouTube && nativeVideoRef.current) nativeVideoRef.current.play().catch(()=>{});
-    },
-    pause: () => {
-      setIsPlaying(false);
-      if (!isYouTube && nativeVideoRef.current) nativeVideoRef.current.pause();
+  // 3. XỬ LÝ MESSAGE TỪ SOCKET (TẤT CẢ LOGIC Ở ĐÂY)
+  const handleSocketMessage = (data: any, myUsername: string, hostUsername: string) => {
+    // A. Chat Message
+    if (data.type === 'CHAT') {
+      setChatMessages(prev => [...prev, data]);
     }
-  };
+    // B. Đếm người online
+    else if (data.type === 'COUNT') {
+      setOnlineCount(parseInt(data.message));
+    }
+    // C. Xử lý Sync Video (Play/Pause/Seek)
+    else if (['PLAY', 'PAUSE', 'SEEK'].includes(data.type)) {
+      // Nếu tin nhắn do chính mình gửi -> Bỏ qua (để tránh giật)
+      if (data.senderName === myUsername) return;
 
-  const handleSocketData = (data: any, hostName: string, myName: string) => {
-    if (data.type === 'CHAT') setChatMessages(prev => [...prev, data]);
-    else if (data.type === 'COUNT') setOnlineCount(parseInt(data.message));
-    else if (['PLAY', 'PAUSE', 'SEEK'].includes(data.type)) handleVideoSync(data);
+      handleVideoSync(data);
+    }
+    // D. Người mới vào -> Nếu mình là Host, hãy gửi trạng thái hiện tại cho họ sync
     else if (data.type === 'JOIN') {
-      if (data.senderName !== myName && myName === hostName) {
-        sendSync(isPlaying ? 'PLAY' : 'PAUSE', playerControl.getCurrentTime());
+      if (data.senderName !== myUsername && myUsername === hostUsername) {
+        // Host gửi trạng thái hiện tại để người mới bắt kịp
+        sendSyncAction(isPlaying ? 'PLAY' : 'PAUSE', getCurrentTime());
       }
     }
-    // 🆕 Xử lý khi phòng bị xóa (nếu Host xóa)
+    // E. Phòng bị Host xóa (END_ROOM)
     else if (data.type === 'END_ROOM') {
-      toast({ title: "Phòng đã kết thúc", description: "Host đã đóng phòng." });
+      setIsPlaying(false);
+      toast({ title: "Phòng đã kết thúc", description: "Host đã đóng phòng này." });
       navigate("/rooms");
     }
   };
 
-  // Sync Logic (Giữ nguyên)
+  // 4. LOGIC ĐIỀU KHIỂN PLAYER (Dùng chung cho YT và Video thường)
+  const getCurrentTime = () => {
+    if (isYouTube) return youtubePlayerRef.current?.getCurrentTime() || 0;
+    return nativeVideoRef.current?.currentTime || 0;
+  };
+
+  const seekTo = (time: number) => {
+    if (isYouTube) youtubePlayerRef.current?.seekTo(time, 'seconds');
+    else if (nativeVideoRef.current) nativeVideoRef.current.currentTime = time;
+  };
+
   const handleVideoSync = (data: any) => {
-    isSyncing.current = true;
-    const currentTime = playerControl.getCurrentTime();
+    isRemoteUpdate.current = true; // 🔴 BẬT CỜ: Đừng gửi lại lệnh này lên server
 
-    if (Math.abs(currentTime - data.seekTime) > 1.5) playerControl.seekTo(data.seekTime);
+    // 1. Sync Thời gian (Nếu lệch quá 1.5 giây mới chỉnh để tránh giật)
+    const currentTime = getCurrentTime();
+    if (Math.abs(currentTime - data.seekTime) > 1.5) {
+      seekTo(data.seekTime);
+    }
 
-    if (data.type === 'PAUSE') playerControl.pause();
-    else if (data.type === 'PLAY') playerControl.play();
-
-    setTimeout(() => { isSyncing.current = false; }, 500);
-  };
-
-  const sendSync = (type: string, time?: number) => {
-    if (!stompClientRef.current || isSyncing.current) return;
-    const t = time !== undefined ? time : playerControl.getCurrentTime();
-    stompClientRef.current.send(`/app/sync/${id}`, {}, JSON.stringify({ type, seekTime: t }));
-  };
-
-  // Events
-  const onPlay = () => {
-    if(!isSyncing.current) {
+    // 2. Sync Trạng thái
+    if (data.type === 'PLAY') {
       setIsPlaying(true);
-      setIsEnded(false); // Bắt đầu chạy lại thì tắt màn hình End
-      sendSync('PLAY');
+      setIsEnded(false);
+      if(!isYouTube) nativeVideoRef.current?.play().catch(()=>{});
+    } else if (data.type === 'PAUSE') {
+      setIsPlaying(false);
+      if(!isYouTube) nativeVideoRef.current?.pause();
+    }
+
+    // 🟢 TẮT CỜ sau 500ms (Cho phép gửi lệnh lại)
+    setTimeout(() => { isRemoteUpdate.current = false; }, 500);
+  };
+
+  // 5. GỬI LỆNH SYNC (User thao tác)
+  const sendSyncAction = (type: string, time?: number) => {
+    // Nếu đang xử lý lệnh từ người khác (Remote) thì không gửi
+    if (isRemoteUpdate.current || !stompClientRef.current) return;
+
+    const currentTime = time !== undefined ? time : getCurrentTime();
+
+    stompClientRef.current.send(`/app/sync/${id}`, {}, JSON.stringify({
+      type: type,
+      seekTime: currentTime,
+      senderName: currentUser?.username
+    }));
+  };
+
+  // --- EVENTS CỦA PLAYER ---
+  const onPlay = () => {
+    if(!isRemoteUpdate.current) {
+      setIsPlaying(true);
+      setIsEnded(false);
+      sendSyncAction('PLAY');
     }
   };
   const onPause = () => {
-    if(!isSyncing.current) { setIsPlaying(false); sendSync('PAUSE'); }
+    if(!isRemoteUpdate.current) {
+      setIsPlaying(false);
+      sendSyncAction('PAUSE');
+    }
   };
-
-  // 🆕 SỰ KIỆN KHI HẾT PHIM
   const onEnded = () => {
     setIsPlaying(false);
     setIsEnded(true);
-    sendSync('PAUSE'); // Đồng bộ trạng thái dừng cho mọi người
+    sendSyncAction('PAUSE'); // Báo mọi người dừng lại
   };
 
-  // 🆕 HÀM XỬ LÝ NÚT KẾT THÚC PHÒNG (Cho Host)
-  const handleEndRoom = async () => {
-    if(!confirm("Bạn có chắc chắn muốn kết thúc và xóa phòng này không?")) return;
-
-    try {
-      // 1. Gọi API xóa phòng
-      await api.delete(`/api/rooms/${id}`);
-
-      // 2. (Tuỳ chọn) Gửi socket báo mọi người out (hoặc để họ tự out khi API lỗi)
-      if(stompClientRef.current) {
-        stompClientRef.current.send(`/app/chat/${id}`, {}, JSON.stringify({ type: 'END_ROOM' }));
-      }
-
-      toast({ title: "Đã kết thúc phòng" });
-      navigate("/rooms");
-    } catch (error) {
-      toast({ variant: "destructive", title: "Lỗi", description: "Không thể xóa phòng." });
-    }
-  };
-
-  // Chat & Sticker
+  // 6. CÁC TÁC VỤ KHÁC
   const handleSendMessage = () => {
     if (messageInput.trim() && stompClientRef.current) {
       stompClientRef.current.send(`/app/chat/${id}`, {}, JSON.stringify({
@@ -216,137 +238,147 @@ const WatchRoom = () => {
       setMessageInput("");
     }
   };
+
   const handleSendSticker = (url: string) => {
-    stompClientRef.current.send(`/app/chat/${id}`, {}, JSON.stringify({
-      type: 'CHAT', message: `STICKER|${url}`, senderName: currentUser.username, avatar: currentUser.avatar
-    }));
-    setShowStickerPicker(false);
+    if(stompClientRef.current) {
+      stompClientRef.current.send(`/app/chat/${id}`, {}, JSON.stringify({
+        type: 'CHAT', message: `STICKER|${url}`, senderName: currentUser.username, avatar: currentUser.avatar
+      }));
+      setShowStickerPicker(false);
+    }
   };
 
-  if (loading) return <div className="h-screen bg-black text-white flex items-center justify-center">Loading...</div>;
+  const handleEndRoom = async () => {
+    if(!confirm("Bạn có chắc chắn muốn kết thúc phòng? Mọi người sẽ bị buộc rời khỏi đây.")) return;
+    try {
+      // Xóa phòng trên DB
+      await api.delete(`/api/rooms/${id}`);
+      // Gửi tín hiệu Socket để kick mọi người
+      if(stompClientRef.current) {
+        stompClientRef.current.send(`/app/chat/${id}`, {}, JSON.stringify({ type: 'END_ROOM' }));
+      }
+      navigate("/rooms");
+    } catch (e) { toast({title: "Lỗi xóa phòng"}); }
+  };
 
-  // 🆕 KIỂM TRA QUYỀN HOST
   const isHost = currentUser?.username === room?.host?.username;
+
+  if (loading) return <div className="h-screen flex items-center justify-center bg-black text-white"><Loader2 className="animate-spin mr-2"/> Đang vào phòng...</div>;
 
   return (
       <div className="h-screen bg-background flex flex-col overflow-hidden">
-        {/* Header */}
-        <div className="border-b border-border px-4 py-3 bg-card/50 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-4">
+        {/* HEADER */}
+        <div className="h-14 border-b px-4 flex items-center justify-between shrink-0 bg-card z-20">
+          <div className="flex items-center gap-3">
             <Button variant="ghost" size="icon" onClick={() => navigate("/rooms")}><ArrowLeft className="h-5 w-5"/></Button>
             <div>
-              <h1 className="font-bold text-lg">{room?.movie?.title}</h1>
+              <h1 className="font-bold text-sm md:text-base truncate max-w-[200px]">{room?.movie?.title}</h1>
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <Badge variant="secondary">Room: {room?.roomCode}</Badge>
-                <Badge variant="outline" className="text-green-600 border-green-500/20"><Users className="h-3 w-3 mr-1" />{onlineCount}</Badge>
+                <Badge variant="outline" className="font-mono">{room?.roomCode}</Badge>
+                <span className="flex items-center text-green-500"><Users className="h-3 w-3 mr-1"/> {onlineCount}</span>
               </div>
             </div>
           </div>
           <Button variant="outline" size="sm" onClick={() => {navigator.clipboard.writeText(window.location.href); toast({title: "Đã copy link!"});}}>
-            <Copy className="h-4 w-4 mr-2" /> Mời
+            <Copy className="h-4 w-4 mr-2" /> <span className="hidden md:inline">Mời bạn bè</span>
           </Button>
         </div>
 
         <div className="flex-1 flex overflow-hidden">
+          {/* --- KHU VỰC VIDEO --- */}
+          <div className="flex-1 bg-black relative flex items-center justify-center group">
 
-          {/* --- VIDEO PLAYER AREA --- */}
-          <div className="flex-1 bg-black relative group flex items-center justify-center">
-
-            {/* 1. MÀN HÌNH CHỜ (Click to Play) */}
+            {/* Màn hình Chờ / Tương tác lần đầu */}
             {!hasInteracted && !isEnded && (
-                <div className="absolute inset-0 z-40 bg-black/80 flex flex-col items-center justify-center cursor-pointer"
-                     onClick={() => { setHasInteracted(true); setIsPlaying(true); }}>
-                  <div className="w-20 h-20 bg-primary rounded-full flex items-center justify-center animate-bounce">
-                    <Play className="h-8 w-8 text-white ml-1" />
+                <div className="absolute inset-0 z-50 bg-black/80 flex flex-col items-center justify-center cursor-pointer"
+                     onClick={() => { setHasInteracted(true); setIsPlaying(true); sendSyncAction('PLAY'); }}>
+                  <div className="w-20 h-20 bg-primary/20 rounded-full flex items-center justify-center animate-pulse">
+                    <Play className="h-10 w-10 text-primary ml-1" />
                   </div>
-                  <p className="text-white mt-4 font-bold">Bấm để tham gia xem chung</p>
+                  <p className="text-white mt-4 font-semibold">Bấm để bắt đầu xem cùng nhau</p>
                 </div>
             )}
 
-            {/* 🆕 2. MÀN HÌNH KẾT THÚC (Chỉ hiện khi hết phim) */}
+            {/* Màn hình Kết thúc phim */}
             {isEnded && (
-                <div className="absolute inset-0 z-50 bg-black/90 flex flex-col items-center justify-center">
-                  <h2 className="text-white text-3xl font-bold mb-6">Phim đã kết thúc</h2>
-
-                  {/* CHỈ HOST MỚI THẤY NÚT XÓA PHÒNG */}
+                <div className="absolute inset-0 z-50 bg-black/95 flex flex-col items-center justify-center text-white">
+                  <h2 className="text-2xl font-bold mb-4">Hết phim</h2>
                   {isHost ? (
-                      <div className="flex flex-col gap-4 items-center">
-                        <Button
-                            variant="destructive"
-                            size="lg"
-                            className="scale-125 font-bold"
-                            onClick={handleEndRoom}
-                        >
-                          <Power className="mr-2 h-5 w-5" /> KẾT THÚC PHÒNG
+                      <div className="flex gap-4">
+                        <Button variant="outline" onClick={() => { setIsEnded(false); seekTo(0); sendSyncAction('SEEK', 0); sendSyncAction('PLAY'); }}>
+                          <Play className="mr-2 h-4 w-4"/> Xem lại
                         </Button>
-                        <p className="text-gray-400 text-sm mt-2">Hành động này sẽ giải tán phòng xem</p>
-
-                        <Button variant="ghost" className="text-white mt-4" onClick={() => { setIsEnded(false); playerControl.seekTo(0); }}>
-                          Xem lại từ đầu
+                        <Button variant="destructive" onClick={handleEndRoom}>
+                          <Power className="mr-2 h-4 w-4"/> Kết thúc phòng
                         </Button>
                       </div>
                   ) : (
-                      <div className="text-center">
-                        <p className="text-gray-300 mb-4">Cảm ơn bạn đã xem cùng mọi người!</p>
-                        <Button variant="secondary" onClick={() => navigate("/rooms")}>
-                          Rời phòng
-                        </Button>
-                      </div>
+                      <p className="text-gray-400">Cảm ơn bạn đã xem!</p>
                   )}
                 </div>
             )}
 
-            {/* TRƯỜNG HỢP A: YOUTUBE */}
-            {isYouTube && hasInteracted && (
-                <div className="absolute inset-0">
-                  <ReactPlayerAny
-                      ref={youtubePlayerRef}
-                      url={videoUrl}
-                      width="100%"
-                      height="100%"
-                      controls={true}
-                      playing={isPlaying}
-                      onPlay={onPlay}
-                      onPause={onPause}
-                      onEnded={onEnded} // 🆕 Gắn sự kiện hết phim
-                      config={{ youtube: { playerVars: { origin: window.location.origin } } }}
-                  />
-                </div>
+            {/* PLAYER: YOUTUBE */}
+            {isYouTube && (
+                <ReactPlayerAny
+                    ref={youtubePlayerRef}
+                    url={videoUrl}
+                    width="100%"
+                    height="100%"
+                    controls={true}
+                    playing={isPlaying}
+                    // Sự kiện
+                    onPlay={onPlay}
+                    onPause={onPause}
+                    onEnded={onEnded}
+                    // Config ẩn logo YT nếu có thể
+                    config={{ youtube: { playerVars: { showinfo: 0, rel: 0, modestbranding: 1 } } }}
+                />
             )}
 
-            {/* TRƯỜNG HỢP B: MP4 NATIVE */}
+            {/* PLAYER: NATIVE MP4 */}
             {!isYouTube && (
                 <video
                     ref={nativeVideoRef}
                     className="w-full h-full object-contain"
-                    controls
                     src={videoUrl}
+                    controls
+                    // Sự kiện
                     onPlay={onPlay}
                     onPause={onPause}
-                    onEnded={onEnded} // 🆕 Gắn sự kiện hết phim
-                    onSeeked={() => sendSync('SEEK')}
+                    onEnded={onEnded}
+                    onSeeked={() => {
+                      // Chỉ gửi sync seek nếu do người dùng kéo (check logic cờ)
+                      if (!isRemoteUpdate.current) sendSyncAction('SEEK');
+                    }}
                 />
             )}
           </div>
 
-          {/* --- CHAT SECTION --- */}
-          <Card className="w-80 md:w-96 border-l border-border rounded-none flex flex-col bg-card h-full shrink-0 z-10 relative">
-            <div className="p-3 border-b font-bold bg-card/50 flex justify-between items-center">
-              <span>Chat</span>
-              <span className="text-xs text-green-500">● Live</span>
-            </div>
-            <ScrollArea className="flex-1 p-4 bg-background/30">
-              <div className="space-y-3">
-                {chatMessages.map((msg, idx) => {
+          {/* --- KHU VỰC CHAT --- */}
+          <Card className="w-80 md:w-96 border-l rounded-none flex flex-col bg-card h-full shrink-0 relative shadow-xl z-30">
+            <ScrollArea className="flex-1 p-3">
+              <div className="space-y-4">
+                {chatMessages.map((msg, i) => {
                   const isMe = msg.senderName === currentUser?.username;
-                  const isSticker = msg.message?.startsWith("STICKER|");
+                  const isSticker = msg.message.startsWith("STICKER|");
                   const content = isSticker ? msg.message.split("|")[1] : msg.message;
+
                   return (
-                      <div key={idx} className={`flex gap-2 ${isMe ? 'flex-row-reverse' : ''}`}>
-                        <Avatar className="w-8 h-8 border border-white/10 mt-1"><AvatarImage src={getImageUrl(msg.avatar)} /><AvatarFallback>{msg.senderName?.[0]}</AvatarFallback></Avatar>
-                        <div className={`max-w-[80%]`}>
-                          <div className={`text-[10px] opacity-70 mb-1 ${isMe ? 'text-right' : ''}`}>{msg.senderName}</div>
-                          {isSticker ? <img src={content} className="w-24 h-24" /> : <div className={`p-2 rounded-lg text-sm ${isMe ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>{content}</div>}
+                      <div key={i} className={`flex gap-2 ${isMe ? 'flex-row-reverse' : ''}`}>
+                        <Avatar className="w-8 h-8 mt-1 border">
+                          <AvatarImage src={getImageUrl(msg.avatar)} />
+                          <AvatarFallback>{msg.senderName?.charAt(0).toUpperCase()}</AvatarFallback>
+                        </Avatar>
+                        <div className={`max-w-[75%] ${isMe ? 'items-end' : 'items-start'} flex flex-col`}>
+                          <span className="text-[10px] text-muted-foreground mb-1">{msg.senderName}</span>
+                          {isSticker ? (
+                              <img src={content} alt="sticker" className="w-20 h-20 object-contain hover:scale-110 transition-transform" />
+                          ) : (
+                              <div className={`px-3 py-2 rounded-lg text-sm break-words ${isMe ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
+                                {content}
+                              </div>
+                          )}
                         </div>
                       </div>
                   )
@@ -354,17 +386,36 @@ const WatchRoom = () => {
               </div>
             </ScrollArea>
 
+            {/* Sticker Picker */}
             {showStickerPicker && (
-                <div className="absolute bottom-16 left-2 right-2 bg-card border rounded-lg shadow-xl p-2 z-50">
-                  <div className="flex justify-between items-center mb-2"><span className="text-xs">Sticker</span><Button size="icon" variant="ghost" className="h-6 w-6" onClick={()=>setShowStickerPicker(false)}><X className="h-4 w-4"/></Button></div>
-                  <div className="grid grid-cols-4 gap-2 max-h-48 overflow-y-auto">{STICKERS.map((u,i)=><img key={i} src={u} className="w-full h-16 object-contain cursor-pointer hover:bg-muted p-1" onClick={()=>handleSendSticker(u)}/>)}</div>
+                <div className="absolute bottom-16 left-2 right-2 bg-popover border rounded-lg shadow-lg p-2 z-50 animate-in fade-in slide-in-from-bottom-2">
+                  <div className="flex justify-between items-center mb-2 px-1">
+                    <span className="text-xs font-semibold">Stickers</span>
+                    <Button size="icon" variant="ghost" className="h-6 w-6" onClick={()=>setShowStickerPicker(false)}><X className="h-4 w-4"/></Button>
+                  </div>
+                  <div className="grid grid-cols-4 gap-2 max-h-48 overflow-y-auto custom-scrollbar">
+                    {STICKERS.map((s, i) => (
+                        <img key={i} src={s} className="w-full h-14 object-contain cursor-pointer hover:bg-muted/50 rounded p-1 transition-colors" onClick={() => handleSendSticker(s)} />
+                    ))}
+                  </div>
                 </div>
             )}
 
-            <div className="p-3 border-t mt-auto flex gap-2 items-center bg-card">
-              <Button size="icon" variant="ghost" onClick={()=>setShowStickerPicker(!showStickerPicker)}><Smile className="h-5 w-5"/></Button>
-              <Input value={messageInput} onChange={e=>setMessageInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleSendMessage()} placeholder="Chat..." className="flex-1" />
-              <Button size="icon" onClick={handleSendMessage}><Send className="h-4 w-4"/></Button>
+            {/* Input Area */}
+            <div className="p-3 border-t bg-card/50 flex gap-2 items-center">
+              <Button size="icon" variant="ghost" className="text-muted-foreground" onClick={()=>setShowStickerPicker(!showStickerPicker)}>
+                <Smile className="h-5 w-5" />
+              </Button>
+              <Input
+                  value={messageInput}
+                  onChange={e => setMessageInput(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleSendMessage()}
+                  placeholder="Nhập tin nhắn..."
+                  className="flex-1 bg-background"
+              />
+              <Button size="icon" onClick={handleSendMessage} disabled={!messageInput.trim()}>
+                <Send className="h-4 w-4" />
+              </Button>
             </div>
           </Card>
         </div>
