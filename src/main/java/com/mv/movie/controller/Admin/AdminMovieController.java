@@ -8,6 +8,7 @@ import com.mv.movie.service.FileStorageService;
 import com.mv.movie.service.TmdbService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -33,7 +34,8 @@ public class AdminMovieController {
 
     @Autowired
     private TmdbService tmdbService;
-
+    @Autowired
+    private SimpMessagingTemplate messagingTemplate;
     // Đường dẫn lưu ảnh
     private final Path uploadDir = Paths.get("uploads");
 
@@ -77,11 +79,7 @@ public class AdminMovieController {
             @RequestParam("releaseYear") int releaseYear,
             @RequestParam("duration") int duration,
             @RequestParam("categoryId") Long categoryId,
-
-            // 👉 SỬA: Poster file không còn bắt buộc
             @RequestParam(value = "poster", required = false) MultipartFile posterFile,
-
-            // 👉 THÊM: Link ảnh từ TMDB (nếu có)
             @RequestParam(value = "posterUrl", required = false) String posterUrl,
 
             @RequestParam(value = "videoFile", required = false) MultipartFile videoFile,
@@ -129,6 +127,7 @@ public class AdminMovieController {
             movie.setCategory(category);
 
             movieRepository.save(movie);
+            messagingTemplate.convertAndSend("/topic/movies", movie);
             return ResponseEntity.ok(movie);
         } catch (Exception e) {
             e.printStackTrace(); // In lỗi ra console để dễ debug

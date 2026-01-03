@@ -19,14 +19,14 @@ public class MovieController {
     private MovieRepository movieRepository;
 
     @Autowired
-    private RatingRepository ratingRepository; // ✅ Inject Repository tính điểm
+    private RatingRepository ratingRepository;
 
     // 1. API Lấy danh sách phim (Có phân trang)
     @GetMapping
     public ResponseEntity<?> getAllMovies(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
-            @RequestParam(required = false) String search // ✅ Thêm tham số search (không bắt buộc)
+            @RequestParam(required = false) String search
     ) {
         Pageable pageable = PageRequest.of(page, size, Sort.by("id").descending());
         Page<Movies> moviePage;
@@ -54,7 +54,6 @@ public class MovieController {
         Movies movie = movieRepository.findById(Math.toIntExact(id))
                 .orElseThrow(() -> new RuntimeException("Phim không tồn tại"));
 
-        // ✅ Tính điểm cho phim này
         calculateAndSetRating(movie);
 
         return ResponseEntity.ok(movie);

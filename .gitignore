@@ -35,4 +35,9 @@ out/
 
 ### VS Code ###
 .vscode/
+
 uploads/
+*.mp4
+*.mov
+*.avi
+
