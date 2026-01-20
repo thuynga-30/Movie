@@ -31,8 +31,6 @@ public class SecurityConfig {
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
-                        // ✅ DÒNG NÀY QUAN TRỌNG NHẤT: Mở khóa file ảnh/video
-                        // Phải đặt trên cùng để không bị chặn bởi các luật khác
                         .requestMatchers("/images/**").permitAll()
 
                         // Các API công khai

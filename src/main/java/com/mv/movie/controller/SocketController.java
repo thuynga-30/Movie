@@ -27,10 +27,7 @@ public class SocketController {
     @Autowired private CommentRepository commentRepository;
     @Autowired private RatingRepository ratingRepository;
 
-    /**
-     * 1. XỬ LÝ CHAT TRONG PHÒNG WATCH PARTY
-     * URL: /app/chat/{roomId} -> /topic/room/{roomId}
-     */
+    //XỬ LÝ CHAT TRONG PHÒNG WATCH PARTY
     @MessageMapping("/chat/{roomId}")
     @SendTo("/topic/room/{roomId}")
     public SocketPayload handleChat(@DestinationVariable String roomId, @Payload SocketPayload payload) {
@@ -57,10 +54,7 @@ public class SocketController {
         return payload;
     }
 
-    /**
-     * 2. XỬ LÝ ĐỒNG BỘ VIDEO (SYNC)
-     * URL: /app/sync/{roomId} -> /topic/room/{roomId}
-     */
+    //2. XỬ LÝ ĐỒNG BỘ VIDEO (SYNC)
     @MessageMapping("/sync/{roomId}")
     @SendTo("/topic/room/{roomId}")
     public SocketPayload handleSync(@DestinationVariable String roomId, @Payload SocketPayload payload) {

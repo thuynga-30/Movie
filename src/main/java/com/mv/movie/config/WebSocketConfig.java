@@ -14,7 +14,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         // Đăng ký endpoint "/ws"
         registry.addEndpoint("/ws")
-                .setAllowedOriginPatterns("*") // <--- DÒNG QUAN TRỌNG NHẤT: Cho phép mọi nguồn (8081, 3000...) kết nối
+                .setAllowedOriginPatterns("*") // Cho phép mọi nguồn (8081, 3000...) kết nối
                 .withSockJS(); // Kích hoạt SockJS để Frontend React kết nối được
     }
 

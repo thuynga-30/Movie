@@ -79,32 +79,7 @@ public class RoomController {
         if (room == null) return ResponseEntity.notFound().build();
         return ResponseEntity.ok(room);
     }
-//    @DeleteMapping("/{roomCode}")
-//    public ResponseEntity<?> deleteRoom(@PathVariable String roomCode) {
-//        // 1. Lấy User đang đăng nhập
-//        String currentUsername = SecurityContextHolder.getContext().getAuthentication().getName();
-//
-//        // 2. Tìm phòng
-//        WatchRoom room = roomRepository.findByRoomCode(roomCode).orElse(null);
-//        if (room == null) return ResponseEntity.badRequest().body("Phòng không tồn tại!");
-//
-//        // 3. Kiểm tra quyền chủ phòng
-//        if (!room.getHost().getUsername().equals(currentUsername)) {
-//            return ResponseEntity.status(403).body("Bạn không phải chủ phòng này!");
-//        }
-//
-//        // 4. Gửi thông báo Socket cho tất cả thành viên: "Phòng đã giải tán"
-//        // Frontend nhận được tin này sẽ tự động chuyển hướng về trang chủ
-//        SocketPayload kickMessage = new SocketPayload();
-//        kickMessage.setType("ROOM_DELETED");
-//        kickMessage.setMessage("Chủ phòng đã giải tán phòng này!");
-//        messagingTemplate.convertAndSend("/topic/room/" + roomCode, kickMessage);
-//
-//        // 5. Xóa phòng trong Database
-//        roomRepository.delete(room);
-//
-//        return ResponseEntity.ok("Đã giải tán phòng thành công!");
-//    }
+
     // POST /api/rooms/join
     @PostMapping("/check-join")
     public ResponseEntity<?> checkJoinRoom(@RequestBody Map<String, String> request) {

@@ -32,7 +32,6 @@ public class AuthController {
         if (userRepository.existsByUsername(user.getUsername())) {
             return ResponseEntity.badRequest().body("Lỗi: Tên đăng nhập đã tồn tại!");
         }
-
         // 2. Mã hóa mật khẩu trước khi lưu
         user.setPassword(passwordEncoder.encode(user.getPassword()));
 

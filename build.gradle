@@ -26,6 +26,7 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-security'
     implementation 'org.springframework.boot:spring-boot-starter-websocket'
     implementation 'io.jsonwebtoken:jjwt-api:0.11.5'
+    implementation 'org.seleniumhq.selenium:selenium-java:4.39.0'
     runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.11.5'
     runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.11.5'
     // 2. MySQL Driver: Thư viện kết nối MySQL (chỉ cần lúc chạy - runtime)
@@ -34,9 +35,21 @@ dependencies {
     // (Tùy chọn) Lombok: Giúp code gọn hơn (tự sinh getter/setter như ví dụ Entity mình gửi)
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
+    // WebDriver Manager
+    testImplementation 'io.github.bonigarcia:webdrivermanager:5.6.2'
+
+    // JUnit 5
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.1'
 
 }
+test {
+    useJUnitPlatform()
 
+    testLogging {
+        events "passed", "failed", "skipped"
+        exceptionFormat "full"
+    }
+}
 tasks.named('test') {
     useJUnitPlatform()
 }

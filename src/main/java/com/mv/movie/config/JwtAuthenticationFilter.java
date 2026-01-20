@@ -43,10 +43,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 username = jwtUtils.getUsername(token);
                 System.out.println("2. Giải mã Username: " + username);
             } catch (Exception e) {
-                System.out.println("❌ LỖI GIẢI MÃ TOKEN: " + e.getMessage());
+                System.out.println(" LỖI GIẢI MÃ TOKEN: " + e.getMessage());
             }
         } else {
-            System.out.println("❌ KHÔNG TÌM THẤY HEADER 'Authorization: Bearer...'");
+            System.out.println(" KHÔNG TÌM THẤY HEADER 'Authorization: Bearer...'");
             System.out.println("   Header nhận được: " + authHeader);
         }
         // -----------------

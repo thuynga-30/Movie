@@ -30,8 +30,7 @@ public class MovieController {
     ) {
         Pageable pageable = PageRequest.of(page, size, Sort.by("id").descending());
         Page<Movies> moviePage;
-
-        // ✅ LOGIC TÌM KIẾM
+        // LOGIC TÌM KIẾM
         if (search != null && !search.isEmpty()) {
             // Nếu có từ khóa -> Tìm kiếm
             moviePage = movieRepository.findByTitleContainingIgnoreCase(search, pageable);
@@ -40,11 +39,10 @@ public class MovieController {
             moviePage = movieRepository.findAll(pageable);
         }
 
-        // ✅ TÍNH ĐIỂM RATING CHO KẾT QUẢ TÌM ĐƯỢC
+        // TÍNH ĐIỂM RATING CHO KẾT QUẢ TÌM ĐƯỢC
         for (Movies movie : moviePage.getContent()) {
             calculateAndSetRating(movie); // Hàm tính điểm bạn đã viết ở bước trước
         }
-
         return ResponseEntity.ok(moviePage);
     }
 
